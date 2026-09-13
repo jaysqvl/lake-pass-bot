@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.6.1...lake-pass-bot-v0.6.2) (2026-09-13)
+
+
+### Bug Fixes
+
+* manage hostname checks from network settings ([#82](https://github.com/jaysqvl/lake-pass-bot/issues/82)) ([284f063](https://github.com/jaysqvl/lake-pass-bot/commit/284f063ace888ab40c9f0f7d86e956030a3e9702))
+
 ## [0.6.1](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.6.0...lake-pass-bot-v0.6.1) (2026-09-13)
 
 
