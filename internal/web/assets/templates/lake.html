@@ -21,8 +21,15 @@
 <form action="/lakes/{{.Lake.ID}}" method="post" class="form-card" autocomplete="off" id="defaults">
   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
   <div class="form-context"><p>Defaults for new requests. Existing requests and queued jobs keep their saved values.</p><span class="pill {{if .Saved}}active{{end}}">{{if .Saved}}Personal defaults{{else}}Default preferences{{end}}</span></div>
-  {{range .Sections}}{{if ne .Title "Booking site URLs"}}{{template "form-section" .}}{{end}}{{end}}
-  <details class="form-advanced"{{if .FormError}} open{{end}}><summary>Advanced settings</summary>{{range .Sections}}{{if eq .Title "Booking site URLs"}}{{template "form-section" .}}{{end}}{{end}}</details>
+  {{range .Sections}}
+    {{if not .Advanced}}{{template "form-section" .}}{{end}}
+  {{end}}
+  <details class="form-advanced"{{if .FormError}} open{{end}}>
+    <summary>Advanced settings</summary>
+    {{range .Sections}}
+      {{if .Advanced}}{{template "form-section" .}}{{end}}
+    {{end}}
+  </details>
   <div class="form-actions"><div class="actions"><button type="submit" class="primary">Save lake defaults</button><a class="button ghost" href="/lakes">Cancel</a></div></div>
 </form>
 {{if .Saved}}<form action="/lakes/{{.Lake.ID}}/reset" method="post" class="reset-defaults"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><div><strong>Reset saved preferences</strong><p class="field-help">Remove your saved overrides. Lake defaults and any previously saved vehicle keyword will apply to new requests. Existing bookings stay unchanged.</p></div><button type="submit" class="ghost">Reset saved preferences</button></form>{{end}}

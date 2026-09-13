@@ -9,7 +9,7 @@
       {{range $index, $section := .Sections}}
       <section class="settings-section" aria-labelledby="settings-section-{{$index}}">
         <div class="settings-section-intro"><h2 id="settings-section-{{$index}}">{{.Title}}</h2>{{if .Help}}<p>{{.Help}}</p>{{end}}</div>
-        <div class="settings-fields">{{template "settings-controls" .}}</div>
+        <div class="settings-fields">{{template "form-controls" .}}</div>
       </section>
       {{end}}
     </div>

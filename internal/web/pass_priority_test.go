@@ -17,7 +17,7 @@ func assertBookingPassChoices(t *testing.T, body string, choices []string) {
 	t.Helper()
 	for i, choice := range choices {
 		field := fmt.Sprintf("pass_priority_%d", i+1)
-		selectMarkup := regexp.MustCompile(`<select name="` + field + `"[^>]*>(.*?)</select>`).FindStringSubmatch(body)
+		selectMarkup := regexp.MustCompile(`(?s)<select name="` + field + `"[^>]*>(.*?)</select>`).FindStringSubmatch(body)
 		if len(selectMarkup) != 2 || !strings.Contains(selectMarkup[1], `value="`+choice+`" selected`) {
 			t.Fatalf("%s did not retain selection %q: %v", field, choice, selectMarkup)
 		}
