@@ -69,7 +69,7 @@ jobs:
       - name: Sync locked environment
         run: uv sync --project actions --locked
       - name: Lint
-        run: uvx --from ruff==0.12.10 ruff check actions scripts/check_build_backend.py scripts/docker_*_smoke.py scripts/release integration/*.py
+        run: uvx --from ruff==0.12.10 ruff check actions scripts/check_build_backend.py scripts/check_release_config.py scripts/docker_*_smoke.py scripts/release integration/*.py
       - name: Tests
         run: uv run --project actions python -m unittest discover -s actions/tests
       - name: Compile package

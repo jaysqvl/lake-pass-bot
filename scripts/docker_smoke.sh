@@ -16,8 +16,6 @@ base_url=""
 appdata_mount="$volume"
 key_directory=""
 swap_limit_supported=""
-network_allowed_host="lake-pass-smoke.example:8080"
-network_unlisted_host="unlisted-lake-pass.example:8080"
 
 cleanup() {
   status=$?
@@ -45,94 +43,14 @@ fail() {
   return 1
 }
 
-header_value() {
-  local file="$1"
-  local name="$2"
-  awk -F ':[[:space:]]*' -v name="$name" '
-    tolower($1) == tolower(name) {
-      value = substr($0, index($0, ":") + 1)
-      sub(/^[[:space:]]+/, "", value)
-      sub(/\r$/, "", value)
-      print value
-      exit
-    }
-  ' "$file"
-}
-
-extract_csrf() {
-  docker exec --interactive "$container" python -c '
-from html.parser import HTMLParser
-import sys
-
-
-class CSRFParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.values = []
-
-    def handle_starttag(self, tag, attrs):
-        values = dict(attrs)
-        if tag == "input" and values.get("name") == "csrf_token":
-            self.values.append(values.get("value") or "")
-
-
-parser = CSRFParser()
-parser.feed(sys.stdin.read())
-if len(parser.values) != 1 or not parser.values[0]:
-    raise SystemExit("expected exactly one non-empty CSRF field")
-print(parser.values[0])
-' <"$1"
-}
-
-validate_page_version() {
-  docker exec --interactive "$container" python -c '
-from html.parser import HTMLParser
-import sys
-
-
-class BuildInfoParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.footers = []
-        self.links = []
-        self.text = []
-        self.in_footer = False
-
-    def handle_starttag(self, tag, attrs):
-        values = dict(attrs)
-        if tag == "footer" and values.get("id") == "build-info":
-            self.footers.append(values)
-            self.in_footer = True
-        if self.in_footer and tag == "a":
-            self.links.append(values.get("href"))
-
-    def handle_endtag(self, tag):
-        if tag == "footer":
-            self.in_footer = False
-
-    def handle_data(self, data):
-        if self.in_footer:
-            self.text.append(data)
-
-
-version, revision = sys.argv[1:]
-parser = BuildInfoParser()
-parser.feed(sys.stdin.read())
-if len(parser.footers) != 1:
-    raise SystemExit("expected exactly one application version footer")
-footer = parser.footers[0]
-if footer.get("data-version") != version or footer.get("data-revision") != revision:
-    raise SystemExit("page version does not match the image build")
-text = " ".join(" ".join(parser.text).split())
-repository = "https://github.com/jaysqvl/lake-pass-bot"
-if version == "dev":
-    if "Development build" not in text:
-        raise SystemExit("development image is not clearly identified")
-elif f"v{version}" not in text or f"{repository}/releases/tag/lake-pass-bot-v{version}" not in parser.links:
-    raise SystemExit("release version or release notes link is missing")
-if revision and (f"Build {revision[:7]}" not in text or f"{repository}/commit/{revision}" not in parser.links):
-    raise SystemExit("build revision or commit link is missing")
-' "$expected_version" "$expected_revision" <"$1" || fail "page returned unexpected build information"
+http_smoke() {
+  local action="$1" label="$2"
+  LAKE_PASS_SMOKE_SETUP_TOKEN="$setup_token" \
+    LAKE_PASS_SMOKE_ADMIN_PASSWORD="$admin_password" \
+    python3 scripts/docker_http_smoke.py \
+      --base-url "$base_url" --workspace "$workspace" --label "$label" \
+      --username "$admin_username" --version "$expected_version" \
+      --revision "$expected_revision" "$action"
 }
 
 wait_for_health() {
@@ -158,114 +76,6 @@ lines = Path("/proc/swaps").read_text().splitlines()
 assert len(lines) == 1 and lines[0].split() == ["Filename", "Type", "Size", "Used", "Priority"]
 ' || fail "swap accounting is unavailable and the Docker host has swap enabled or unverifiable"
   fi
-}
-
-# Unconfigured accounts now land on Lakes. Follow only that specific redirect
-# and retain identity/header checks on the final authenticated document.
-fetch_authenticated_landing() {
-  local cookies="$1" page="$2" headers="$3" code=""
-  code="$(curl --silent --show-error --max-time 10 \
-    --cookie "$cookies" --dump-header "$headers" --output "$page" \
-    --write-out '%{http_code}' "$base_url/")"
-  if [[ "$code" == "303" ]]; then
-    [[ "$(header_value "$headers" Location)" == "/lakes" ]] || fail "authenticated Home returned an unexpected redirect"
-    code="$(curl --silent --show-error --max-time 10 \
-      --cookie "$cookies" --dump-header "$headers" --output "$page" \
-      --write-out '%{http_code}' "$base_url/lakes")"
-  fi
-  [[ "$code" == "200" ]] || fail "authenticated landing page returned HTTP $code"
-  grep -Fq "Account settings for $admin_username" "$page" || fail "authenticated landing page did not identify the administrator"
-  [[ "$(header_value "$headers" Cache-Control)" == "no-store" ]] || fail "authenticated HTML was cacheable"
-  [[ -n "$(header_value "$headers" Content-Security-Policy)" ]] || fail "authenticated HTML omitted its Content Security Policy"
-}
-
-# Scope token extraction to the Network form: authenticated pages also contain
-# the logout form's CSRF token. Verify the toggle is editable and reflects the
-# expected saved state before using its real token for the next UI update.
-network_settings_csrf() {
-  local cookies="$1" expected_enabled="$2"
-  local page="$workspace/network-settings-page" code=""
-  code="$(curl --silent --show-error --max-time 10 \
-    --cookie "$cookies" --output "$page" --write-out '%{http_code}' \
-    "$base_url/settings/network")"
-  [[ "$code" == "200" ]] || fail "Network settings returned HTTP $code"
-  docker exec --interactive "$container" python -c '
-from html.parser import HTMLParser
-import sys
-
-
-class NetworkFormParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.in_form = False
-        self.forms = []
-        self.tokens = []
-        self.toggles = []
-        self.hosts = []
-
-    def handle_starttag(self, tag, attrs):
-        values = dict(attrs)
-        if tag == "form":
-            self.in_form = values.get("action") == "/settings/network"
-            if self.in_form:
-                self.forms.append(values)
-        if not self.in_form:
-            return
-        if tag == "input" and values.get("name") == "csrf_token":
-            self.tokens.append(values.get("value") or "")
-        if tag == "input" and values.get("name") == "host_check_enabled":
-            self.toggles.append(values)
-        if tag == "textarea" and values.get("name") == "allowed_hosts":
-            self.hosts.append(values)
-
-    def handle_endtag(self, tag):
-        if tag == "form":
-            self.in_form = False
-
-
-parser = NetworkFormParser()
-parser.feed(sys.stdin.read())
-assert len(parser.forms) == 1 and parser.forms[0].get("method", "").lower() == "post", "missing Network settings form"
-assert len(parser.tokens) == 1 and parser.tokens[0], "expected one Network form CSRF token"
-assert len(parser.toggles) == 1, "missing hostname toggle"
-toggle = parser.toggles[0]
-assert toggle.get("type") == "checkbox" and toggle.get("role") == "switch", "hostname setting is not an accessible toggle"
-assert "disabled" not in toggle, "hostname toggle is unexpectedly locked by deployment configuration"
-assert ("checked" in toggle) == (sys.argv[1] == "true"), "hostname toggle differs from expected saved state"
-assert len(parser.hosts) == 1 and "disabled" not in parser.hosts[0], "allowed hostnames are not editable"
-print(parser.tokens[0])
-' "$expected_enabled" <"$page" || fail "Network settings did not expose the expected editable state"
-}
-
-save_network_settings() {
-  local cookies="$1" enabled="$2" csrf="$3" code=""
-  local form=(--data-urlencode "csrf_token=$csrf" --data-urlencode "allowed_hosts=${base_url#http://},$network_allowed_host")
-  if [[ "$enabled" == "true" ]]; then
-    form+=(--data-urlencode "host_check_enabled=on")
-  fi
-  code="$(curl --silent --show-error --max-time 10 \
-    --cookie "$cookies" --header "Origin: $base_url" \
-    "${form[@]}" \
-    --dump-header "$workspace/network-save-headers" \
-    --output "$workspace/network-save-response" --write-out '%{http_code}' \
-    "$base_url/settings/network")"
-  [[ "$code" == "303" ]] || fail "saving Network settings returned HTTP $code"
-  [[ "$(header_value "$workspace/network-save-headers" Location)" == "/settings/network?ok=updated" ]] || fail "Network settings returned an unexpected save redirect"
-}
-
-validate_hostname_boundary() {
-  local enabled="$1" code="" expected_unlisted="200"
-  if [[ "$enabled" == "true" ]]; then
-    expected_unlisted="400"
-  fi
-  code="$(curl --silent --show-error --max-time 10 \
-    --header "Host: $network_allowed_host" --output /dev/null \
-    --write-out '%{http_code}' "$base_url/login")"
-  [[ "$code" == "200" ]] || fail "listed hostname returned HTTP $code"
-  code="$(curl --silent --show-error --max-time 10 \
-    --header "Host: $network_unlisted_host" --output /dev/null \
-    --write-out '%{http_code}' "$base_url/login")"
-  [[ "$code" == "$expected_unlisted" ]] || fail "unlisted hostname returned HTTP $code with hostname checks $enabled"
 }
 
 start_container() {
@@ -342,66 +152,7 @@ validate_doctor() {
   ' >/dev/null || fail "doctor returned an unexpected runtime report"
 }
 
-perform_setup() {
-  local cookies="$workspace/setup-cookies"
-  local page="$workspace/setup-page"
-  local headers="$workspace/setup-headers"
-  local response="$workspace/setup-response"
-  local csrf=""
-  local code=""
-
-  curl --fail --silent --show-error --max-time 10 \
-    --cookie-jar "$cookies" --dump-header "$workspace/setup-get-headers" \
-    --output "$page" "$base_url/setup"
-  validate_page_version "$page"
-  csrf="$(extract_csrf "$page")"
-
-  code="$(curl --silent --show-error --max-time 10 \
-    --cookie "$cookies" --cookie-jar "$cookies" \
-    --header "Origin: $base_url" \
-    --data-urlencode "csrf_token=$csrf" \
-    --data-urlencode "setup_token=$setup_token" \
-    --data-urlencode "username=$admin_username" \
-    --data-urlencode "password=$admin_password" \
-    --data-urlencode "password_confirm=$admin_password" \
-    --dump-header "$headers" --output "$response" \
-    --write-out '%{http_code}' "$base_url/setup")"
-  [[ "$code" == "303" ]] || fail "first-run setup returned HTTP $code"
-  [[ "$(header_value "$headers" Location)" == "/?ok=setup" ]] || fail "first-run setup returned an unexpected redirect"
-  tr -d '\r' < "$headers" | grep -Eiq '^set-cookie: lake_pass_session=.*HttpOnly; SameSite=Strict$' || fail "setup did not issue the hardened session cookie"
-  tr -d '\r' < "$headers" | grep -Eiq '^set-cookie: lake_pass_csrf=.*HttpOnly; SameSite=Strict$' || fail "setup did not issue the hardened CSRF cookie"
-
-  fetch_authenticated_landing "$cookies" "$workspace/setup-dashboard" "$workspace/setup-dashboard-headers"
-  validate_page_version "$workspace/setup-dashboard"
-}
-
-perform_login() {
-  local label="$1"
-  local cookies="$workspace/${label}-cookies"
-  local page="$workspace/${label}-login-page"
-  local headers="$workspace/${label}-login-headers"
-  local response="$workspace/${label}-login-response"
-  local csrf=""
-  local code=""
-
-  curl --fail --silent --show-error --max-time 10 \
-    --cookie-jar "$cookies" --output "$page" "$base_url/login"
-  csrf="$(extract_csrf "$page")"
-  code="$(curl --silent --show-error --max-time 10 \
-    --cookie "$cookies" --cookie-jar "$cookies" \
-    --header "Origin: $base_url" \
-    --data-urlencode "csrf_token=$csrf" \
-    --data-urlencode "username=$admin_username" \
-    --data-urlencode "password=$admin_password" \
-    --dump-header "$headers" --output "$response" \
-    --write-out '%{http_code}' "$base_url/login")"
-  [[ "$code" == "303" ]] || fail "login returned HTTP $code"
-  [[ "$(header_value "$headers" Location)" == "/" ]] || fail "login returned an unexpected redirect"
-
-  fetch_authenticated_landing "$cookies" "$workspace/${label}-dashboard" "$workspace/${label}-dashboard-headers"
-}
-
-for command in docker curl jq; do
+for command in docker curl jq python3; do
   command -v "$command" >/dev/null || fail "$command is required"
 done
 swap_limit_supported="$(docker info --format '{{json .SwapLimit}}')"
@@ -471,13 +222,9 @@ docker exec "$container" sh -eu -c '
 key_digest="$(docker exec "$container" sha256sum /appdata/master.key | awk '{print $1}')"
 validate_doctor
 [[ "$(docker exec "$container" /usr/local/bin/buntzen version)" == "$(docker exec "$container" /usr/local/bin/lake-pass-bot version)" ]] || fail "legacy CLI alias differs from the renamed binary"
-perform_setup
-perform_login before-restart
-network_csrf="$(network_settings_csrf "$workspace/before-restart-cookies" false)"
-validate_hostname_boundary false
-save_network_settings "$workspace/before-restart-cookies" true "$network_csrf"
-network_settings_csrf "$workspace/before-restart-cookies" true >/dev/null
-validate_hostname_boundary true
+http_smoke setup setup
+http_smoke login before-restart
+http_smoke network-enable before-restart
 
 docker exec --interactive "$container" sh -eu -c 'cat > /tmp/lake-pass-browser-smoke.py' \
   < scripts/docker_browser_smoke.py
@@ -502,22 +249,12 @@ start_container
 [[ "$(docker exec "$container" sha256sum /appdata/master.key | awk '{print $1}')" == "$key_digest" ]] || fail "recreated container replaced the persistent encryption key"
 docker exec "$container" sh -eu -c 'grep -qx persisted /appdata/.ci-persistence-marker' || fail "recreated container did not retain appdata"
 
-fetch_authenticated_landing "$workspace/setup-cookies" "$workspace/restarted-session-dashboard" "$workspace/restarted-session-headers"
-validate_page_version "$workspace/restarted-session-dashboard"
-
-setup_code="$(curl --silent --show-error --max-time 10 \
-  --dump-header "$workspace/restart-setup-headers" --output /dev/null \
-  --write-out '%{http_code}' "$base_url/setup")"
-[[ "$setup_code" == "303" ]] || fail "completed setup was not retained after container recreation"
-[[ "$(header_value "$workspace/restart-setup-headers" Location)" == "/login" ]] || fail "completed setup did not redirect to login after container recreation"
+http_smoke landing setup
+http_smoke setup-complete anonymous
 
 validate_doctor
-perform_login after-restart
-network_csrf="$(network_settings_csrf "$workspace/after-restart-cookies" true)"
-validate_hostname_boundary true
-save_network_settings "$workspace/after-restart-cookies" false "$network_csrf"
-network_settings_csrf "$workspace/after-restart-cookies" false >/dev/null
-validate_hostname_boundary false
+http_smoke login after-restart
+http_smoke network-disable after-restart
 
 service_logs="$(docker logs "$container" 2>&1)"
 [[ "$service_logs" != *"$setup_token"* ]] || fail "restarted service logs exposed the setup token"
@@ -549,7 +286,7 @@ for label in external-key external-key-restart; do
     ! (echo invalid > /run/buntzen-key/master.key) 2>/dev/null
     ! touch /run/buntzen-key/new-key 2>/dev/null
   ' || fail "external key mount is writable or legacy key was recreated"
-  perform_login "$label"
+  http_smoke login "$label"
   docker exec --interactive --env "CI_ADMIN_PASSWORD=$admin_password" "$container" \
     python - retained < scripts/docker_key_smoke.py
   docker stop --time 45 "$container" >/dev/null
@@ -564,11 +301,11 @@ mkdir "$appdata_mount"
 docker run --rm --user 0 --entrypoint sh --volume "$appdata_mount:/appdata" "$image" \
   -eu -c 'chown 1001:1001 /appdata; chmod 0700 /appdata'
 start_container
-perform_setup
-perform_login fresh-bind
+http_smoke setup setup
+http_smoke login fresh-bind
 docker stop --time 45 "$container" >/dev/null
 docker rm "$container" >/dev/null
 start_container
-perform_login bind-restart
+http_smoke login bind-restart
 
 echo "Container smoke test passed: version, UID 1001, finite resources, read-only root/key mount, two browsers with service workers, encrypted state, setup/login, UI hostname toggle with restart persistence, volume and bind restart."
