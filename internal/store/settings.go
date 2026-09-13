@@ -23,11 +23,11 @@ func (u UserStore) GetLakeSettings(ctx context.Context, lakeID string) (model.La
 	var passOrder, updated string
 	err = u.store.db.QueryRowContext(ctx, `
 		SELECT user_id, lake_id, timezone, release_time, release_days_before,
-			all_day_pass_url, half_day_pass_url, pass_order, vehicle_keyword, updated_at
+			all_day_pass_url, half_day_pass_url, pass_order, vehicle_keyword, COALESCE(booking_profile_id, 0), updated_at
 		FROM lake_settings WHERE user_id = ? AND lake_id = ?
 	`, u.userID, lake.ID).Scan(&settings.UserID, &settings.LakeID, &settings.Timezone,
 		&settings.ReleaseTime, &settings.ReleaseDaysBefore, &settings.AllDayPassURL,
-		&settings.HalfDayPassURL, &passOrder, &settings.VehicleKeyword, &updated)
+		&settings.HalfDayPassURL, &passOrder, &settings.VehicleKeyword, &settings.BookingProfileID, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.LakeSettings{}, ErrNotFound
 	}
@@ -59,19 +59,30 @@ func (u UserStore) SaveLakeSettings(ctx context.Context, settings model.LakeSett
 	if err := settings.Validate(); err != nil {
 		return model.LakeSettings{}, err
 	}
+	if settings.BookingProfileID > 0 {
+		profile, err := u.GetProfile(ctx, settings.BookingProfileID)
+		if err != nil {
+			return model.LakeSettings{}, err
+		}
+		if profile.EffectiveLakeID() != lake.ID || profile.EffectiveProviderID() != lake.ProviderID {
+			return model.LakeSettings{}, ErrConflict
+		}
+	}
 	_, err = u.store.db.ExecContext(ctx, `
 		INSERT INTO lake_settings(user_id, lake_id, timezone, release_time,
-			release_days_before, all_day_pass_url, half_day_pass_url, pass_order, vehicle_keyword, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			release_days_before, all_day_pass_url, half_day_pass_url, pass_order, vehicle_keyword, booking_profile_id, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(user_id, lake_id) DO UPDATE SET
 			timezone = excluded.timezone, release_time = excluded.release_time,
 			release_days_before = excluded.release_days_before,
 			all_day_pass_url = excluded.all_day_pass_url, half_day_pass_url = excluded.half_day_pass_url,
 			pass_order = excluded.pass_order, vehicle_keyword = excluded.vehicle_keyword,
+			booking_profile_id = excluded.booking_profile_id,
 			updated_at = excluded.updated_at
 	`, u.userID, settings.LakeID, settings.Timezone, settings.ReleaseTime,
 		settings.ReleaseDaysBefore, settings.AllDayPassURL, settings.HalfDayPassURL,
-		passOrderCSV(settings.PreferredPasses), settings.VehicleKeyword, formatTime(u.store.now()))
+		passOrderCSV(settings.PreferredPasses), settings.VehicleKeyword,
+		sql.NullInt64{Int64: settings.BookingProfileID, Valid: settings.BookingProfileID > 0}, formatTime(u.store.now()))
 	if err != nil {
 		return model.LakeSettings{}, mapWriteError(err)
 	}
@@ -100,11 +111,11 @@ func (u UserStore) GetAccountSettings(ctx context.Context) (model.AccountSetting
 	var settings model.AccountSettings
 	var updated string
 	err := u.store.db.QueryRowContext(ctx, `
-		SELECT user_id, headless, browser_channel, default_timeout_ms,
+		SELECT user_id, default_confirmation_mode, headless, browser_channel, default_timeout_ms,
 			prep_minutes_before, auth_deadline_minutes_before, poll_deadline_seconds,
 			poll_min_seconds, poll_max_seconds, updated_at
 		FROM account_settings WHERE user_id = ?
-	`, u.userID).Scan(&settings.UserID, &settings.Headless, &settings.BrowserChannel,
+	`, u.userID).Scan(&settings.UserID, &settings.DefaultConfirmationMode, &settings.Headless, &settings.BrowserChannel,
 		&settings.DefaultTimeoutMS, &settings.PrepMinutesBefore,
 		&settings.AuthDeadlineMinutesBefore, &settings.PollDeadlineSeconds,
 		&settings.PollMinSeconds, &settings.PollMaxSeconds, &updated)
@@ -125,23 +136,26 @@ func (u UserStore) SaveAccountSettings(ctx context.Context, settings model.Accou
 		return model.AccountSettings{}, ErrUserRequired
 	}
 	settings.UserID = u.userID
+	if settings.DefaultConfirmationMode == "" {
+		settings.DefaultConfirmationMode = model.RunModeManual
+	}
 	settings.BrowserChannel = strings.ToLower(strings.TrimSpace(settings.BrowserChannel))
 	if err := settings.Validate(); err != nil {
 		return model.AccountSettings{}, err
 	}
 	_, err := u.store.db.ExecContext(ctx, `
-		INSERT INTO account_settings(user_id, headless, browser_channel, default_timeout_ms,
+		INSERT INTO account_settings(user_id, default_confirmation_mode, headless, browser_channel, default_timeout_ms,
 			prep_minutes_before, auth_deadline_minutes_before, poll_deadline_seconds,
 			poll_min_seconds, poll_max_seconds, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(user_id) DO UPDATE SET headless = excluded.headless,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET default_confirmation_mode = excluded.default_confirmation_mode, headless = excluded.headless,
 			browser_channel = excluded.browser_channel, default_timeout_ms = excluded.default_timeout_ms,
 			prep_minutes_before = excluded.prep_minutes_before,
 			auth_deadline_minutes_before = excluded.auth_deadline_minutes_before,
 			poll_deadline_seconds = excluded.poll_deadline_seconds,
 			poll_min_seconds = excluded.poll_min_seconds, poll_max_seconds = excluded.poll_max_seconds,
 			updated_at = excluded.updated_at
-	`, u.userID, settings.Headless, settings.BrowserChannel, settings.DefaultTimeoutMS,
+	`, u.userID, settings.DefaultConfirmationMode, settings.Headless, settings.BrowserChannel, settings.DefaultTimeoutMS,
 		settings.PrepMinutesBefore, settings.AuthDeadlineMinutesBefore, settings.PollDeadlineSeconds,
 		settings.PollMinSeconds, settings.PollMaxSeconds, formatTime(u.store.now()))
 	if err != nil {

@@ -1,0 +1,16 @@
+{{define "content"}}
+<section class="section-head">
+  <div><p class="eyebrow">Saved request</p><h1>{{.Request.Name}}</h1><p>{{.LakeName}} · {{.Request.TargetDate}}</p></div>
+  <a class="button ghost" href="/bookings">Back to bookings</a>
+</section>
+<div class="form-card quick-booking">
+  {{if .Problem}}<div class="flash error" role="alert" id="form-error" tabindex="-1">{{.Problem}}</div>{{end}}
+  <section><h2>Visit details</h2><dl><div><dt>Pass preferences</dt><dd>{{.Passes}}</dd></div><div><dt>Automatic queueing</dt><dd>{{if and .Request.Enabled .Request.ScheduleEnabled}}Enabled when server scheduling is on{{else}}Off{{end}}</dd></div></dl>
+    <div class="actions"><a class="button primary" href="/bookings/new?lake_id={{.Request.LakeID}}">Book another day</a>{{if .PendingJobURL}}<a class="button ghost" href="{{.PendingJobURL}}">View pending job</a>{{end}}</div>
+  </section>
+  <section class="delete-request" id="delete"><h2>Delete saved request</h2><p>Remove this request from Bookings and stop it from creating future jobs. Completed job history and reservation records are kept.</p>
+    {{if .PendingJobURL}}<p>Cancel the pending job from Jobs or wait for it to finish before deleting this request.</p>{{end}}
+    <form method="post" action="/bookings/{{.Request.ID}}/delete"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="danger" type="submit"{{if .PendingJobURL}} disabled{{end}}>Delete saved request</button></form>
+  </section>
+</div>
+{{end}}

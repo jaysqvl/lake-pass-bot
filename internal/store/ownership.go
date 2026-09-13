@@ -88,12 +88,20 @@ func (u UserStore) ListBookingRequests(ctx context.Context) ([]model.BookingRequ
 	return u.store.ListBookingRequests(ctx, u.userID)
 }
 
+func (u UserStore) ListSavedBookingRequests(ctx context.Context) ([]model.BookingRequest, error) {
+	return u.store.ListSavedBookingRequests(ctx, u.userID)
+}
+
 func (u UserStore) DeleteBookingRequest(ctx context.Context, id int64) error {
 	return u.store.DeleteBookingRequest(ctx, u.userID, id)
 }
 
 func (u UserStore) EnqueueJob(ctx context.Context, params EnqueueJobParams) (model.Job, error) {
 	return u.store.EnqueueJob(ctx, u.userID, params)
+}
+
+func (u UserStore) EnqueueBookingRequest(ctx context.Context, request model.BookingRequest, params EnqueueJobParams) (model.Job, error) {
+	return u.store.EnqueueBookingRequest(ctx, u.userID, request, params)
 }
 
 func (u UserStore) GetJob(ctx context.Context, id int64) (model.Job, error) {

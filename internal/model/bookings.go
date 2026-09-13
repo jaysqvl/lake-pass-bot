@@ -19,10 +19,22 @@ const (
 	PassMorning   PassType = "morning"
 )
 
+// Saved requests retain legacy schedules. Snapshots are immutable inputs to new
+// jobs; archived requests retain legacy history without claiming that their
+// current fields were the original inputs to every historical job.
+type BookingKind string
+
+const (
+	BookingKindSaved    BookingKind = "saved"
+	BookingKindSnapshot BookingKind = "snapshot"
+	BookingKindArchived BookingKind = "archived"
+)
+
 type BookingRequest struct {
 	ID              int64
 	UserID          int64
 	Name            string
+	Kind            BookingKind
 	LakeID          string
 	ProfileID       int64
 	VehicleKeyword  string
@@ -88,6 +100,9 @@ func (r BookingRequest) PassOrder() []PassType {
 
 func (r BookingRequest) Validate() error {
 	var problems []string
+	if r.Kind != "" && r.Kind != BookingKindSaved && r.Kind != BookingKindSnapshot && r.Kind != BookingKindArchived {
+		problems = append(problems, "booking kind is invalid")
+	}
 	if strings.TrimSpace(r.Name) == "" {
 		problems = append(problems, "name is required")
 	} else if len(r.Name) > MaxResourceNameBytes {

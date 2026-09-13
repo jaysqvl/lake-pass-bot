@@ -12,8 +12,9 @@ type Profile struct {
 	ID         int64
 	UserID     int64
 	ProviderID string
-	// LakeID and DefaultVehicle retain pre-shared-sign-in data for migration
-	// and compatibility. Active booking policy belongs to the request.
+	// LakeID identifies the lake where this connection was configured.
+	// DefaultVehicle is retained for migration; new vehicle preferences belong
+	// to lake settings and each job retains its own booking snapshot.
 	LakeID            string
 	Name              string
 	DefaultVehicle    string

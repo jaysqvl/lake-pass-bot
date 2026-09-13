@@ -11,7 +11,7 @@ import (
 	"github.com/jaysqvl/lake-pass-bot/internal/model"
 )
 
-func TestBookingPageSeparatesAutoQueueingFromExistingJob(t *testing.T) {
+func TestSavedRequestAndJobPagesSeparateSchedulingFromQueuedWork(t *testing.T) {
 	fixture := newWebFixture(t)
 	ctx := context.Background()
 	_, booking := createImmediateWebBooking(t, fixture, fixture.admin.ID, "queue-status", true)
@@ -24,21 +24,21 @@ func TestBookingPageSeparatesAutoQueueingFromExistingJob(t *testing.T) {
 	}
 	cookies := loginCookies(t, fixture)
 	form := serveForm(fixture, http.MethodGet, fmt.Sprintf("/bookings/%d", booking.ID), cookies, nil)
-	for _, want := range []string{"Auto-queueing is currently off for this server", "Turning this off does not cancel jobs already queued", "For release jobs: wait for your approval or confirm automatically", "Book now always requires approval"} {
+	for _, want := range []string{"Enabled when server scheduling is on", "Book another day", "Delete saved request"} {
 		if form.Code != http.StatusOK || !strings.Contains(form.Body.String(), want) {
 			t.Fatalf("booking form missing %q: %d %s", want, form.Code, form.Body.String())
 		}
 	}
-	before := serveForm(fixture, http.MethodGet, "/bookings", cookies, nil)
-	if before.Code != http.StatusOK || !strings.Contains(before.Body.String(), "No booking queued") || !strings.Contains(before.Body.String(), "Off for this server") {
-		t.Fatalf("booking without a job: %d %s", before.Code, before.Body.String())
+	before := serveForm(fixture, http.MethodGet, "/", cookies, nil)
+	if before.Code != http.StatusOK || !strings.Contains(before.Body.String(), "Auto-queueing is off for this server") || !strings.Contains(before.Body.String(), "Already queued jobs remain scheduled") {
+		t.Fatalf("server scheduling notice: %d %s", before.Code, before.Body.String())
 	}
 	job, err := fixture.server.engine.QueueBooking(ctx, fixture.admin.ID, booking.ID, model.CommandBook, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	page := serveForm(fixture, http.MethodGet, "/bookings", cookies, nil)
-	for _, want := range []string{"Waiting to start", "Off for this server", "Already queued jobs remain scheduled", "Earliest start", "Mon, Sep 9, 2030 at 6:30 AM", "Mon, Sep 9, 2030 at 7:00 AM", "Automatic final confirmation", fmt.Sprintf(`href="/jobs/%d"`, job.ID)} {
+	page := serveForm(fixture, http.MethodGet, fmt.Sprintf("/jobs/%d", job.ID), cookies, nil)
+	for _, want := range []string{"Waiting to start", "Earliest start", "Mon, Sep 9, 2030 at 6:30 AM", "Automatic final confirmation", "Release window"} {
 		if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), want) {
 			t.Fatalf("queued booking missing %q: %d %s", want, page.Code, page.Body.String())
 		}
@@ -53,21 +53,21 @@ func TestBookingPageSeparatesAutoQueueingFromExistingJob(t *testing.T) {
 	if err := fixture.store.ForUser(fixture.admin.ID).RequestJobCancellation(ctx, job.ID); err != nil {
 		t.Fatal(err)
 	}
-	page = serveForm(fixture, http.MethodGet, "/bookings", cookies, nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "No booking queued") || strings.Contains(page.Body.String(), fmt.Sprintf(`href="/jobs/%d"`, job.ID)) {
-		t.Fatal("cancelled booking still appears pending")
+	page = serveForm(fixture, http.MethodGet, fmt.Sprintf("/bookings/%d", booking.ID), cookies, nil)
+	if page.Code != http.StatusOK || strings.Contains(page.Body.String(), "View pending job") || strings.Contains(page.Body.String(), fmt.Sprintf(`href="/jobs/%d"`, job.ID)) {
+		t.Fatal("cancelled job still blocks the saved request")
 	}
 }
 
-func TestBookingCardUsesImmediateJobsSavedManualMode(t *testing.T) {
+func TestJobDetailsUseImmediateJobsSavedManualMode(t *testing.T) {
 	fixture := newWebFixture(t)
 	_, booking := createImmediateWebBooking(t, fixture, fixture.admin.ID, "manual-status", true)
 	job, err := fixture.server.engine.QueueBookingNow(context.Background(), fixture.admin.ID, booking.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	page := serveForm(fixture, http.MethodGet, "/bookings", loginCookies(t, fixture), nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Manual final approval") || strings.Contains(page.Body.String(), "Automatic final confirmation") || !strings.Contains(page.Body.String(), fmt.Sprintf(`href="/jobs/%d"`, job.ID)) {
+	page := serveForm(fixture, http.MethodGet, fmt.Sprintf("/jobs/%d", job.ID), loginCookies(t, fixture), nil)
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Manual final approval") || strings.Contains(page.Body.String(), "Automatic final confirmation") || !strings.Contains(page.Body.String(), "Book now · manual approval") {
 		t.Fatalf("immediate job shown with wrong confirmation policy: %d %s", page.Code, page.Body.String())
 	}
 }

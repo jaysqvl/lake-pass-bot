@@ -12,11 +12,18 @@ import (
 
 const MaxReleaseDaysBefore = 365
 
+var (
+	ErrLakeConnectionRequired    = errors.New("connect an account on the lake page before booking")
+	ErrLakeConnectionAmbiguous   = errors.New("choose an account to use for bookings on the lake page")
+	ErrLakeConnectionUnavailable = errors.New("the selected booking account is unavailable; update the connection on the lake page")
+)
+
 // LakeSettings are one account's defaults. ApplyTo copies them into a booking;
 // changing these defaults never changes an existing request or queued job.
 type LakeSettings struct {
 	UserID            int64
 	LakeID            string
+	BookingProfileID  int64
 	VehicleKeyword    string
 	Timezone          string
 	ReleaseTime       string
@@ -59,6 +66,34 @@ func (s LakeSettings) Validate() error {
 	return nil
 }
 
+// ResolveLakeBookingProfile uses an explicit choice, or the sole enabled
+// account connected to this lake. A disabled choice never switches identities
+// implicitly, and sharing a provider does not connect another lake.
+func ResolveLakeBookingProfile(lake destinations.Lake, settings LakeSettings, profiles []Profile) (Profile, error) {
+	var eligible []Profile
+	for _, profile := range profiles {
+		if (settings.UserID > 0 && profile.UserID != settings.UserID) ||
+			profile.EffectiveLakeID() != lake.ID || profile.EffectiveProviderID() != lake.ProviderID || !profile.Enabled {
+			continue
+		}
+		if settings.BookingProfileID == profile.ID {
+			return profile, nil
+		}
+		eligible = append(eligible, profile)
+	}
+	if settings.BookingProfileID != 0 {
+		return Profile{}, ErrLakeConnectionUnavailable
+	}
+	switch len(eligible) {
+	case 0:
+		return Profile{}, ErrLakeConnectionRequired
+	case 1:
+		return eligible[0], nil
+	default:
+		return Profile{}, ErrLakeConnectionAmbiguous
+	}
+}
+
 func (s LakeSettings) ValidateForOrigins(allowedOrigins []string) error {
 	if err := s.Validate(); err != nil {
 		return err
@@ -71,6 +106,9 @@ func (s LakeSettings) ValidateForOrigins(allowedOrigins []string) error {
 
 func (s LakeSettings) validationProblems() []string {
 	var problems []string
+	if s.BookingProfileID < 0 {
+		problems = append(problems, "booking account is invalid")
+	}
 	lake, lakeErr := destinations.Resolve(s.LakeID)
 	if lakeErr != nil {
 		problems = append(problems, lakeErr.Error())
@@ -118,10 +156,12 @@ func (s LakeSettings) validationProblems() []string {
 	return problems
 }
 
-// AccountSettings supply browser defaults for new profiles and preparation /
-// retry defaults for new bookings. Existing records retain their saved values.
+// AccountSettings supply browser defaults for new profiles and timing and
+// confirmation preferences for new bookings. Existing records retain their
+// saved values.
 type AccountSettings struct {
 	UserID                    int64
+	DefaultConfirmationMode   RunMode
 	Headless                  bool
 	BrowserChannel            string
 	DefaultTimeoutMS          int
@@ -135,7 +175,8 @@ type AccountSettings struct {
 
 func DefaultAccountSettings() AccountSettings {
 	return AccountSettings{
-		Headless: true, DefaultTimeoutMS: 15_000,
+		DefaultConfirmationMode: RunModeManual,
+		Headless:                true, DefaultTimeoutMS: 15_000,
 		PrepMinutesBefore: 30, AuthDeadlineMinutesBefore: 5,
 		PollDeadlineSeconds: 120, PollMinSeconds: 1.4, PollMaxSeconds: 3.6,
 	}
@@ -151,6 +192,9 @@ func (s AccountSettings) ApplyToBooking(request BookingRequest) BookingRequest {
 }
 
 func (s AccountSettings) Validate() error {
+	if s.DefaultConfirmationMode != "" && s.DefaultConfirmationMode != RunModeManual && s.DefaultConfirmationMode != RunModeAuto {
+		return errors.New("choose manual approval or automatic confirmation")
+	}
 	if len(s.BrowserChannel) > MaxBrowserChannelBytes {
 		return errors.New("browser selection is too long")
 	}

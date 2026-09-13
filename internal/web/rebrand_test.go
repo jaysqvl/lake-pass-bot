@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -96,57 +95,38 @@ func TestRebrandPreservesLegacySessionsAndLogout(t *testing.T) {
 	}
 }
 
-func TestLakeSelectionCreateEditAndRejectUnknown(t *testing.T) {
+func TestLakeBookingSelectionAndLegacyRequestsRejectInvalidChanges(t *testing.T) {
 	fixture := newWebFixture(t)
-	profile, _ := createImmediateWebBooking(t, fixture, fixture.admin.ID, "lake owner", true)
+	_, saved := createImmediateWebBooking(t, fixture, fixture.admin.ID, "lake owner", true)
 	cookies := loginCookies(t, fixture)
-	page := serveForm(fixture, http.MethodGet, "/bookings/new", cookies, nil)
-	if page.Code != http.StatusOK || !regexp.MustCompile(`<select\b[^>]*name="lake_id"[^>]*\brequired(?:\s|>)`).MatchString(page.Body.String()) || !strings.Contains(page.Body.String(), `value="buntzen" selected>Buntzen Lake`) {
-		t.Fatal("new booking does not expose the supported lake selector")
+	page := serveForm(fixture, http.MethodGet, "/bookings", cookies, nil)
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "/bookings/new?lake_id=buntzen") || !strings.Contains(page.Body.String(), "Buntzen Lake") {
+		t.Fatal("bookings did not expose the supported lake")
 	}
-	form := url.Values{
-		"csrf_token": {csrfFrom(cookies)}, "name": {"Selected lake"}, "lake_id": {"buntzen"}, "profile_id": {stringID(profile.ID)},
-		"enabled": {"1"}, "target_date": {"2030-01-15"}, "timezone": {"America/Vancouver"}, "release_time": {"07:00"},
-		"confirmation_mode": {"manual"}, "all_day_pass_url": {"https://example.test/all"}, "half_day_pass_url": {"https://example.test/half"},
-		"prep_minutes_before": {"30"}, "auth_deadline_minutes_before": {"5"}, "poll_deadline_seconds": {"120"},
-		"poll_min_seconds": {"1"}, "poll_max_seconds": {"2"}, "pass_priority_1": {"all_day"},
-	}
-	response := serveForm(fixture, http.MethodPost, "/bookings/new", cookies, form)
-	if response.Code != http.StatusSeeOther {
-		t.Fatalf("create=%d: %s", response.Code, response.Body.String())
-	}
-	bookings, err := fixture.store.ForUser(fixture.admin.ID).ListBookingRequests(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var id int64
-	for _, booking := range bookings {
-		if booking.Name == "Selected lake" {
-			id = booking.ID
-			if booking.LakeID != "buntzen" {
-				t.Fatal("lake not persisted")
-			}
-		}
-	}
-	if id == 0 {
-		t.Fatal("created booking missing")
-	}
-	path := "/bookings/" + stringID(id)
+	path := "/bookings/" + stringID(saved.ID)
 	page = serveForm(fixture, http.MethodGet, path, cookies, nil)
-	if !strings.Contains(page.Body.String(), `value="buntzen" selected>Buntzen Lake`) {
-		t.Fatal("edit lost lake choice")
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), saved.Name) || !strings.Contains(page.Body.String(), "Buntzen Lake") || strings.Contains(page.Body.String(), `name="lake_id"`) {
+		t.Fatal("legacy request did not retain its destination as a read-only detail")
 	}
-	form.Set("lake_id", "unsupported")
-	response = serveForm(fixture, http.MethodPost, path, cookies, form)
-	if response.Code != http.StatusUnprocessableEntity {
-		t.Fatal("unknown lake accepted")
+	form := url.Values{"csrf_token": {csrfFrom(cookies)}, "lake_id": {"unsupported"}, "target_date": {"2030-01-15"}, "pass_priority_1": {"all_day"}}
+	response := serveForm(fixture, http.MethodPost, path, cookies, form)
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("removed request update route status=%d", response.Code)
 	}
-	saved, err := fixture.store.ForUser(fixture.admin.ID).GetBookingRequest(context.Background(), id)
-	if err != nil || saved.LakeID != "buntzen" {
-		t.Fatal("invalid update changed the destination")
+	retained, err := fixture.store.ForUser(fixture.admin.ID).GetBookingRequest(context.Background(), saved.ID)
+	if err != nil || retained.LakeID != saved.LakeID || retained.TargetDate != saved.TargetDate {
+		t.Fatal("removed update route changed the saved request")
+	}
+	response = serveForm(fixture, http.MethodPost, "/bookings/new", cookies, form)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("unsupported booking lake status=%d", response.Code)
 	}
 	page = serveForm(fixture, http.MethodGet, "/bookings/new?lake_id=unsupported", cookies, nil)
-	if page.Code != http.StatusBadRequest {
+	if page.Code != http.StatusNotFound {
 		t.Fatal("unknown lake query silently defaulted")
+	}
+	jobs, err := fixture.store.ForUser(fixture.admin.ID).ListJobs(context.Background(), 10)
+	if err != nil || len(jobs) != 0 {
+		t.Fatalf("invalid lake created jobs: %+v err=%v", jobs, err)
 	}
 }

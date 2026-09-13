@@ -5,7 +5,7 @@
   <article class="card">
     <div class="card-title"><div class="lake-heading">{{template "lake-icon" .}}<div><h2><a href="{{.URL}}">{{.Lake.Name}}</a></h2><p>{{.Description}}</p></div></div><span class="pill {{.StatusClass}}">{{.Status}}</span></div>
     <dl>{{range .Fields}}<div><dt>{{.Label}}</dt><dd>{{.Value}}</dd></div>{{end}}</dl>
-    <div class="actions"><a class="button primary" href="{{.URL}}">{{.ActionLabel}}</a>{{if .Configured}}<a class="button" href="/bookings/new?lake_id={{.Lake.ID}}">New booking</a>{{end}}</div>
+    <div class="actions"><a class="button primary" href="{{.URL}}">{{.ActionLabel}}</a>{{if .Configured}}<a class="button" href="/bookings/new?lake_id={{.Lake.ID}}">Book</a>{{end}}</div>
   </article>
 {{end}}</div>
 {{end}}

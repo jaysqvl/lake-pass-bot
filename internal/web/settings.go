@@ -43,7 +43,13 @@ func (s *Server) settingsUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func accountSettingsInput(r *http.Request) (model.AccountSettings, error) {
-	value := model.AccountSettings{Headless: checked(r, "headless"), BrowserChannel: strings.TrimSpace(r.Form.Get("browser_channel"))}
+	value := model.AccountSettings{
+		Headless: checked(r, "headless"), BrowserChannel: strings.TrimSpace(r.Form.Get("browser_channel")),
+		DefaultConfirmationMode: model.RunMode(r.Form.Get("default_confirmation_mode")),
+	}
+	if value.DefaultConfirmationMode == "" {
+		value.DefaultConfirmationMode = model.RunModeManual
+	}
 	var problems []string
 	for _, field := range []struct {
 		name, label string
@@ -83,6 +89,12 @@ func accountSettingsInput(r *http.Request) (model.AccountSettings, error) {
 
 func (s *Server) renderSettingsPage(w http.ResponseWriter, r *http.Request, value model.AccountSettings, problem string) {
 	data := settingsPageData{BaseData: base(r, "Settings"), FormError: problem, Sections: []formSection{
+		{Title: "Booking confirmation", Help: "Scheduled release jobs use this preference. Booking passes that are already available always requires your approval.", Fields: []formField{
+			{Name: "default_confirmation_mode", Label: "Final confirmation", Type: "select", Options: []selectOption{
+				{Value: string(model.RunModeManual), Label: "Manual approval", Selected: value.DefaultConfirmationMode == "" || value.DefaultConfirmationMode == model.RunModeManual},
+				{Value: string(model.RunModeAuto), Label: "Automatic confirmation", Selected: value.DefaultConfirmationMode == model.RunModeAuto},
+			}},
+		}},
 		{Title: "Preparation", Help: "When to prepare and finish signing in before a pass release. New requests use these defaults; existing requests keep their saved timing.", Fields: []formField{
 			{Name: "prep_minutes_before", Label: "Start preparation (minutes)", Type: "number", Value: strconv.Itoa(value.PrepMinutesBefore), Required: true, Min: "0", Max: "180", Step: "1"},
 			{Name: "auth_deadline_minutes_before", Label: "Sign-in deadline (minutes)", Type: "number", Value: strconv.Itoa(value.AuthDeadlineMinutesBefore), Required: true, Min: "0", Max: "180", Step: "1"},

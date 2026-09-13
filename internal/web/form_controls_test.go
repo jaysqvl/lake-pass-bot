@@ -1,8 +1,6 @@
 package web
 
 import (
-	"encoding/json"
-	"html"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -63,17 +61,13 @@ func TestRenderedFormControlsPreserveValuesAndAccessibleLabels(t *testing.T) {
 	}
 }
 
-func TestRenderedFormPreservesPlaceholderAndLakeDefaults(t *testing.T) {
+func TestRenderedFormPreservesAndEscapesPlaceholder(t *testing.T) {
 	renderer, err := NewRenderer()
 	if err != nil {
 		t.Fatal(err)
 	}
-	const defaults = `{"id":"synthetic","vehicleKeyword":"Vehicle <two>"}`
 	data := formData{Sections: []formSection{{Fields: []formField{
 		{Name: "vehicle_keyword", Label: "Vehicle", Type: "text", Placeholder: "Example <vehicle>"},
-		{Name: "lake_id", Label: "Lake", Type: "select", Options: []selectOption{
-			{Value: "synthetic", Label: "Synthetic lake", LakeDefaults: defaults},
-		}},
 	}}}}
 	response := httptest.NewRecorder()
 	if err := renderer.Render(response, http.StatusOK, "form", data); err != nil {
@@ -82,10 +76,6 @@ func TestRenderedFormPreservesPlaceholderAndLakeDefaults(t *testing.T) {
 	body := response.Body.String()
 	if !strings.Contains(body, `placeholder="Example &lt;vehicle&gt;"`) {
 		t.Fatal("vehicle placeholder was not preserved and escaped")
-	}
-	match := regexp.MustCompile(`data-lake-defaults="([^"]+)"`).FindStringSubmatch(body)
-	if len(match) != 2 || html.UnescapeString(match[1]) != defaults || !json.Valid([]byte(html.UnescapeString(match[1]))) {
-		t.Fatalf("lake defaults did not survive HTML rendering: %v", match)
 	}
 }
 

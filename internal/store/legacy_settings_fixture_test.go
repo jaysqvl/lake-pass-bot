@@ -46,7 +46,7 @@ func legacySettingsExecutionFixture(t *testing.T, database *Store) (model.Profil
 	}
 	days := 1
 	booking := model.BookingRequest{
-		UserID: testUserID, LakeID: "buntzen", ProfileID: profile.ID, Name: "Migration visit",
+		UserID: testUserID, Kind: model.BookingKindSaved, LakeID: "buntzen", ProfileID: profile.ID, Name: "Migration visit",
 		VehicleKeyword: profile.DefaultVehicle, Enabled: true, ScheduleEnabled: true,
 		TargetDate: "2030-08-12", Timezone: "America/Vancouver", ReleaseTime: "07:00", ReleaseDaysBefore: &days,
 		PrepMinutesBefore: 30, AuthDeadlineMinutesBefore: 5, PollDeadlineSeconds: 120, PollMinSeconds: 1.4, PollMaxSeconds: 3.6,

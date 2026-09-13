@@ -16,14 +16,15 @@ import (
 
 type lakePageData struct {
 	BaseData
-	Lake            destinations.Lake
-	Saved           bool
-	FormError       string
-	Sections        []formSection
-	Connection      lakeConnection
-	Profiles        []dashboardCard
-	ProviderName    string
-	ConnectionError string
+	Lake                    destinations.Lake
+	Saved                   bool
+	FormError               string
+	Sections                []formSection
+	Connection              lakeConnection
+	Profiles                []dashboardCard
+	ProviderName            string
+	ConnectionError         string
+	BookingConnectionNotice string
 }
 
 // The catalog owns identity/support; preferences belong only to this account.
@@ -40,6 +41,7 @@ func (s *Server) effectiveLakeSettings(r *http.Request, lakeID string) (destinat
 	settings, err := s.userStore(r).GetLakeSettings(r.Context(), lake.ID)
 	if errors.Is(err, store.ErrNotFound) {
 		settings = model.DefaultLakeSettings(lake)
+		settings.UserID = s.userStore(r).UserID()
 		// Preserve an unambiguous legacy vehicle when no lake override exists.
 		// New global sign-ins have no vehicle, and multiple choices need input.
 		profiles, profileErr := s.userStore(r).ListProfiles(r.Context())
@@ -141,6 +143,14 @@ func (s *Server) renderLakePage(w http.ResponseWriter, r *http.Request, submitte
 			break
 		}
 	}
+	profiles := make([]model.Profile, 0, len(data.Connection.Profiles))
+	for _, profile := range data.Connection.Profiles {
+		profiles = append(profiles, profile.Profile)
+	}
+	bookingProfile, bookingErr := model.ResolveLakeBookingProfile(lake, settings, profiles)
+	if bookingErr != nil && len(profiles) > 0 {
+		data.BookingConnectionNotice = bookingErr.Error()
+	}
 	for _, profile := range data.Connection.Profiles {
 		card := profileCard(profile.Profile, data.Connection.DefaultSourceName)
 		card.Status, card.StatusClass, card.Description = profile.Status, profile.StatusClass, profile.Description
@@ -152,6 +162,14 @@ func (s *Server) renderLakePage(w http.ResponseWriter, r *http.Request, submitte
 			card.Actions = []cardAction{{"View job", profile.JobURL, "primary"}}
 		} else if profile.JobURL != "" {
 			card.Actions = append(card.Actions, cardAction{"View last check", profile.JobURL, ""})
+		}
+		if profile.ID == bookingProfile.ID {
+			card.Fields = append(card.Fields, labelValue{"Bookings", "Used for bookings"})
+		} else if profile.Enabled {
+			card.PostActions = append(card.PostActions, postAction{
+				Label: "Use for bookings", URL: "/lakes/" + url.PathEscape(lake.ID) + "/connection",
+				Fields: []hiddenField{{Name: "booking_profile_id", Value: strconv.FormatInt(profile.ID, 10)}},
+			})
 		}
 		data.Profiles = append(data.Profiles, dashboardCard{listCard: card, CSRFToken: data.CSRFToken})
 	}
@@ -191,6 +209,12 @@ func (s *Server) lakeUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	settings, err := lakeSettingsInput(r, id)
+	_, existing, _, loadErr := s.effectiveLakeSettings(r, id)
+	if loadErr != nil {
+		s.internal(w)
+		return
+	}
+	settings.BookingProfileID = existing.BookingProfileID
 	if err == nil {
 		err = settings.ValidateForOrigins(s.config.YodelOrigins)
 	}
@@ -204,13 +228,58 @@ func (s *Server) lakeUpdate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/lakes/"+url.PathEscape(id)+"?ok=updated#defaults", http.StatusSeeOther)
 }
 
+func (s *Server) lakeConnectionUpdate(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("lakeID")
+	if _, err := destinations.Resolve(id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	lake, settings, _, err := s.effectiveLakeSettings(r, id)
+	if err != nil {
+		s.internal(w)
+		return
+	}
+	profileID, err := strconv.ParseInt(r.Form.Get("booking_profile_id"), 10, 64)
+	if err != nil || profileID <= 0 {
+		s.renderLakePage(w, r, nil, "Choose an account to use for bookings.")
+		return
+	}
+	profiles, err := s.userStore(r).ListProfiles(r.Context())
+	if err != nil {
+		s.internal(w)
+		return
+	}
+	settings.BookingProfileID = profileID
+	if _, err := model.ResolveLakeBookingProfile(lake, settings, profiles); err != nil {
+		s.renderLakePage(w, r, nil, err.Error())
+		return
+	}
+	if _, err := s.userStore(r).SaveLakeSettings(r.Context(), settings); err != nil {
+		s.renderLakePage(w, r, nil, safeFormError(err))
+		return
+	}
+	http.Redirect(w, r, "/lakes/"+url.PathEscape(lake.ID)+"?ok=updated#connection", http.StatusSeeOther)
+}
+
 func (s *Server) lakeReset(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("lakeID")
 	if _, err := destinations.Resolve(id); err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.userStore(r).ResetLakeSettings(r.Context(), id); err != nil {
+	lake, settings, _, err := s.effectiveLakeSettings(r, id)
+	if err != nil {
+		s.internal(w)
+		return
+	}
+	if settings.BookingProfileID == 0 {
+		err = s.userStore(r).ResetLakeSettings(r.Context(), id)
+	} else {
+		defaults := model.DefaultLakeSettings(lake)
+		defaults.BookingProfileID = settings.BookingProfileID
+		_, err = s.userStore(r).SaveLakeSettings(r.Context(), defaults)
+	}
+	if err != nil {
 		s.internal(w)
 		return
 	}

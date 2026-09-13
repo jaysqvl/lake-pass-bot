@@ -1,0 +1,25 @@
+{{define "content"}}
+<section class="section-head">
+  <div><p class="eyebrow">Plan a visit</p><h1>Bookings</h1><p>Choose a lake, then pick your date and passes.</p></div>
+</section>
+<div class="resource-list">
+  {{range .Lakes}}
+  <article class="card">
+    <div class="card-title">
+      <div class="lake-heading">{{template "lake-icon" .}}<div><h2>{{.Lake.Name}}</h2><p>{{if .Ready}}Uses your saved lake connection and preferences.{{else}}{{.Problem}}{{end}}</p></div></div>
+      <span class="pill {{if .Ready}}ok{{else}}warn{{end}}">{{if .Ready}}Ready to book{{else}}Setup needed{{end}}</span>
+    </div>
+    <div class="actions">
+      {{if .Ready}}<a class="button primary" href="/bookings/new?lake_id={{.Lake.ID}}">Book</a><a class="button ghost" href="/lakes/{{.Lake.ID}}">Lake settings</a>
+      {{else}}<a class="button primary" href="/lakes/{{.Lake.ID}}">Set up lake</a>{{end}}
+    </div>
+  </article>
+  {{end}}
+</div>
+{{if .Saved}}
+<section class="saved-requests">
+  <div class="section-head"><div><h2>Saved requests</h2><p>Review or remove your previously saved visits. Job history is kept.</p></div></div>
+  <div class="resource-list">{{range .Saved}}{{template "resource-card" .}}{{end}}</div>
+</section>
+{{end}}
+{{end}}

@@ -51,16 +51,40 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, problem
 		s.internal(w)
 		return
 	}
-	jobs, err := userStore.ListJobs(r.Context(), 10)
+	jobs, err := userStore.ListJobs(r.Context(), 200)
 	if err != nil {
 		s.internal(w)
 		return
 	}
-	data := dashboardData{BaseData: base(r, "Home"), SchedulesEnabled: s.config.SchedulesEnabled, BookingCount: len(bookings), AutoQueueNotice: autoQueueOffNotice, Jobs: s.jobRows(r.Context(), userStore, jobs), Connections: connections}
+	recent := jobs
+	if len(recent) > 10 {
+		recent = recent[:10]
+	}
+	data := dashboardData{BaseData: base(r, "Home"), SchedulesEnabled: s.config.SchedulesEnabled, AutoQueueNotice: autoQueueOffNotice, Jobs: s.jobRows(r.Context(), userStore, recent), Connections: connections}
+	visits := make(map[int64]model.Job)
+	for _, job := range jobs {
+		if job.BookingRequestID != nil && job.Command == model.CommandBook && (!job.Status.Terminal() || job.Status == model.JobSucceeded) {
+			visits[*job.BookingRequestID] = job
+		}
+	}
+	visible := bookings[:0]
+	for _, booking := range bookings {
+		if booking.Kind == model.BookingKindSaved || visits[booking.ID].ID != 0 {
+			visible = append(visible, booking)
+		}
+	}
+	bookings = visible
 	for _, booking := range upcomingBookings(bookings, time.Now()) {
 		lake, _ := destinations.Resolve(booking.EffectiveLakeID())
-		data.Bookings = append(data.Bookings, dashboardBooking{Name: booking.Name, URL: fmt.Sprintf("/bookings/%d", booking.ID), Date: booking.TargetDate, Lake: lake.Name})
+		url := fmt.Sprintf("/bookings/%d", booking.ID)
+		name := booking.Name
+		if booking.Kind == model.BookingKindSnapshot {
+			url = fmt.Sprintf("/jobs/%d", visits[booking.ID].ID)
+			name = lake.Name
+		}
+		data.Bookings = append(data.Bookings, dashboardBooking{Name: name, URL: url, Date: booking.TargetDate, Lake: lake.Name})
 	}
+	data.BookingCount = len(data.Bookings)
 	if problem != "" {
 		data.Flash = &Flash{Kind: "error", Message: problem}
 	}

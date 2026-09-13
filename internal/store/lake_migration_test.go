@@ -27,6 +27,18 @@ func TestLakeMigrationPreservesBookingsCredentialsAndReservation(t *testing.T) {
 	// Reconstruct the pre-selection schema from populated state. Remove only
 	// the newer additions so all v6 constraints and execution records remain.
 	if _, err := database.db.ExecContext(ctx, `
+		DROP TRIGGER lake_booking_profile_insert;
+		DROP TRIGGER lake_booking_profile_update;
+		DROP TRIGGER lake_booking_profile_identity;
+		DROP TRIGGER jobs_prune_booking_snapshot;
+		DROP TRIGGER booking_requests_user_limit;
+		ALTER TABLE booking_requests DROP COLUMN kind;
+		CREATE TRIGGER booking_requests_user_limit
+		BEFORE INSERT ON booking_requests
+		WHEN (SELECT count(*) FROM booking_requests WHERE user_id = NEW.user_id) >= 64
+		BEGIN
+			SELECT RAISE(ABORT, 'per-user booking request limit reached');
+		END;
 		DROP TRIGGER IF EXISTS booking_profile_lake_insert;
 		DROP TRIGGER IF EXISTS booking_profile_lake_update;
 		DROP TRIGGER IF EXISTS profiles_lake_immutable;
