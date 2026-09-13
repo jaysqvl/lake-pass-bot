@@ -14,6 +14,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
 
 FROM mcr.microsoft.com/playwright/python:v1.62.0-noble@sha256:aa81288e738725378becba5b3e06cb0f3a7f012a610e87e8d767a090ea3f740d
 
+LABEL net.unraid.docker.icon="https://raw.githubusercontent.com/jaysqvl/lake-pass-bot/main/deploy/lake-pass-bot.png" \
+    net.unraid.docker.webui="http://[IP]:[PORT:8080]/"
+
 ENV APPDATA_DIR=/appdata \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
