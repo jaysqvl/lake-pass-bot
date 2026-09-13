@@ -16,8 +16,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.MaxConcurrentJobs != 2 || cfg.ListenAddress != ":8080" || cfg.SchedulesEnabled {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
-	if !cfg.HostCheckEnabled {
-		t.Fatal("host checks must be enabled by default")
+	if cfg.HostCheckEnabled || cfg.HostCheckConfigured {
+		t.Fatal("host checks must default to off and remain editable in the UI")
 	}
 	if cfg.LogLevel != "info" || cfg.EffectiveLogLevel() != "info" {
 		t.Fatalf("default log level = %q", cfg.LogLevel)
@@ -132,15 +132,18 @@ func TestLoadAllowedHostsAndSetupToken(t *testing.T) {
 
 func TestLoadHostCheckEnabled(t *testing.T) {
 	for _, test := range []struct {
-		name  string
-		value string
-		unset bool
-		want  bool
+		name       string
+		value      string
+		unset      bool
+		want       bool
+		configured bool
 	}{
-		{name: "unset", unset: true, want: true},
-		{name: "empty", want: true},
-		{name: "enabled", value: "true", want: true},
-		{name: "disabled", value: "false", want: false},
+		{name: "unset", unset: true},
+		{name: "empty"},
+		{name: "whitespace", value: "  "},
+		{name: "enabled", value: "true", want: true, configured: true},
+		{name: "disabled", value: "false", configured: true},
+		{name: "trimmed", value: " true ", want: true, configured: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			isolateEnvironment(t)
@@ -153,8 +156,8 @@ func TestLoadHostCheckEnabled(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cfg.HostCheckEnabled != test.want {
-				t.Fatalf("host check enabled = %t, want %t", cfg.HostCheckEnabled, test.want)
+			if cfg.HostCheckEnabled != test.want || cfg.HostCheckConfigured != test.configured {
+				t.Fatalf("host check enabled/configured = %t/%t, want %t/%t", cfg.HostCheckEnabled, cfg.HostCheckConfigured, test.want, test.configured)
 			}
 		})
 	}

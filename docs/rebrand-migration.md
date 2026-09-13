@@ -56,13 +56,22 @@ well. Optional settings still accept their legacy names, and unprefixed settings
 such as `BLUEBUBBLES_URL` retain their names. Keep the existing service identity,
 host paths, and runtime settings when applying the template.
 
-The current Compose templates default `LAKE_PASS_HOST_CHECK_ENABLED=false`, so
-private HTTP accepts any valid hostname. Set it to `true` to preserve an existing
-hostname restriction, and retain `LAKE_PASS_ALLOWED_HOSTS` (or its legacy
-`BUNTZEN_ALLOWED_HOSTS` fallback). The list is ignored for private HTTP while the
-toggle is `false`. An image-only update of an older stack keeps hostname checks
-enabled when the new setting is absent. Configured public HTTPS boundaries and
-CSRF checks remain enforced in either case.
+The current Compose templates leave `LAKE_PASS_HOST_CHECK_ENABLED` empty so
+administrators manage hostname checks and their allowed host/port list in
+**Settings > Network**. Checks default to off; saving the UI settings applies
+immediately and persists across restarts. An existing explicit `true` or `false`
+(including the legacy `BUNTZEN_HOST_CHECK_ENABLED` fallback) remains an operator
+override and locks these UI controls. Remove or empty the canonical override to
+restore UI control; also remove a legacy override or use an explicitly empty
+canonical value to supersede it.
+
+When upgrading from a version that enforced hosts by default, set an explicit
+`LAKE_PASS_HOST_CHECK_ENABLED=true` and retain `LAKE_PASS_ALLOWED_HOSTS` (or its
+legacy fallback) if you need to preserve that restriction during the upgrade.
+Without an override or saved UI settings, hostname checks are off. Environment
+host/origin entries seed the initial UI list; after saving, the UI list governs
+private HTTP unless an override is set. Configured public HTTPS boundaries and
+CSRF checks remain enforced in every case. See [hostname settings and recovery](public-exposure.md#private-http-hostnames).
 
 ## Isolated source builds and release images
 

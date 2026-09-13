@@ -24,28 +24,29 @@ const (
 )
 
 type Config struct {
-	AppDataDir        string
-	DatabasePath      string
-	EncryptionKeyPath string
-	MasterKeyExplicit bool
-	ProfilesDir       string
-	ArtifactsDir      string
-	ListenAddress     string
-	MaxConcurrentJobs int
-	SchedulesEnabled  bool
-	PythonExecutable  string
-	PythonModule      string
-	BrowserExecutable string
-	BlueBubblesURL    string
-	BlueBubblesPolicy *egress.Policy
-	YodelOrigins      []string
-	AllowedOrigins    []string
-	AllowedHosts      []string
-	HostCheckEnabled  bool
-	PublicOrigin      string
-	TrustedProxies    []netip.Prefix
-	SetupToken        string
-	LogLevel          string
+	AppDataDir          string
+	DatabasePath        string
+	EncryptionKeyPath   string
+	MasterKeyExplicit   bool
+	ProfilesDir         string
+	ArtifactsDir        string
+	ListenAddress       string
+	MaxConcurrentJobs   int
+	SchedulesEnabled    bool
+	PythonExecutable    string
+	PythonModule        string
+	BrowserExecutable   string
+	BlueBubblesURL      string
+	BlueBubblesPolicy   *egress.Policy
+	YodelOrigins        []string
+	AllowedOrigins      []string
+	AllowedHosts        []string
+	HostCheckEnabled    bool
+	HostCheckConfigured bool
+	PublicOrigin        string
+	TrustedProxies      []netip.Prefix
+	SetupToken          string
+	LogLevel            string
 }
 
 func Load() (Config, error) {
@@ -113,7 +114,7 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	hostCheckEnabled, err := boolValue("LAKE_PASS_HOST_CHECK_ENABLED", true)
+	hostCheckEnabled, err := boolValue("LAKE_PASS_HOST_CHECK_ENABLED", false)
 	if err != nil {
 		return Config{}, err
 	}
@@ -145,26 +146,27 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg := Config{
-		AppDataDir:        abs,
-		DatabasePath:      database,
-		EncryptionKeyPath: keyPath,
-		MasterKeyExplicit: keyExplicit,
-		ProfilesDir:       filepath.Join(abs, "profiles"),
-		ArtifactsDir:      filepath.Join(abs, "artifacts"),
-		ListenAddress:     listen,
-		MaxConcurrentJobs: maxJobs,
-		SchedulesEnabled:  schedules,
-		PythonExecutable:  python,
-		PythonModule:      module,
-		BrowserExecutable: browserExecutable,
-		BlueBubblesURL:    blueBubblesURL,
-		BlueBubblesPolicy: blueBubblesPolicy,
-		YodelOrigins:      yodelOrigins,
-		AllowedOrigins:    allowedOrigins,
-		AllowedHosts:      allowedHosts,
-		HostCheckEnabled:  hostCheckEnabled,
-		SetupToken:        strings.TrimSpace(Env("LAKE_PASS_SETUP_TOKEN")),
-		LogLevel:          logLevel,
+		AppDataDir:          abs,
+		DatabasePath:        database,
+		EncryptionKeyPath:   keyPath,
+		MasterKeyExplicit:   keyExplicit,
+		ProfilesDir:         filepath.Join(abs, "profiles"),
+		ArtifactsDir:        filepath.Join(abs, "artifacts"),
+		ListenAddress:       listen,
+		MaxConcurrentJobs:   maxJobs,
+		SchedulesEnabled:    schedules,
+		PythonExecutable:    python,
+		PythonModule:        module,
+		BrowserExecutable:   browserExecutable,
+		BlueBubblesURL:      blueBubblesURL,
+		BlueBubblesPolicy:   blueBubblesPolicy,
+		YodelOrigins:        yodelOrigins,
+		AllowedOrigins:      allowedOrigins,
+		AllowedHosts:        allowedHosts,
+		HostCheckEnabled:    hostCheckEnabled,
+		HostCheckConfigured: strings.TrimSpace(Env("LAKE_PASS_HOST_CHECK_ENABLED")) != "",
+		SetupToken:          strings.TrimSpace(Env("LAKE_PASS_SETUP_TOKEN")),
+		LogLevel:            logLevel,
 	}
 	if err := cfg.loadHTTPBoundary(); err != nil {
 		return Config{}, err

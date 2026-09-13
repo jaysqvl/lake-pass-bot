@@ -11,6 +11,7 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
+from urllib.parse import parse_qs
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -125,6 +126,106 @@ class AuthenticatedLandingTests(unittest.TestCase):
                 result, paths = self.run_landing(**options)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(paths, ["/", "/lakes"])
+
+
+class NetworkSettingsSmokeTests(unittest.TestCase):
+    def run_network_settings(self, *, initially_enabled=False, locked=False,
+                             apply_changes=True, reject_unlisted=True, save_status=303):
+        state = {"enabled": initially_enabled}
+        updates = []
+        allowed_host = "lake-pass-smoke.example:8080"
+        unlisted_host = "unlisted-lake-pass.example:8080"
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == "/login":
+                    rejected = state["enabled"] and reject_unlisted and self.headers.get("Host") == unlisted_host
+                    self.send_response(400 if rejected else 200)
+                    self.end_headers()
+                    return
+                if self.path != "/settings/network" or self.headers.get("Cookie") != "smoke_session=admin":
+                    self.send_error(401)
+                    return
+                checked = " checked" if state["enabled"] else ""
+                disabled = " disabled" if locked else ""
+                page = (
+                    '<form action="/logout" method="post"><input name="csrf_token" value="logout-token"></form>'
+                    '<form action="/settings/network" method="post">'
+                    '<input name="csrf_token" value="network-token">'
+                    f'<input name="host_check_enabled" type="checkbox" role="switch"{checked}{disabled}>'
+                    f'<textarea name="allowed_hosts"{disabled}>{allowed_host}</textarea></form>'
+                )
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(page.encode())
+
+            def do_POST(self):
+                form = parse_qs(self.rfile.read(int(self.headers["Content-Length"])).decode())
+                if (self.path != "/settings/network" or self.headers.get("Cookie") != "smoke_session=admin"
+                        or self.headers.get("Origin") != f"http://127.0.0.1:{self.server.server_port}"
+                        or form.get("csrf_token") != ["network-token"]):
+                    self.send_error(403)
+                    return
+                updates.append(form)
+                if apply_changes:
+                    state["enabled"] = form.get("host_check_enabled") == ["on"]
+                self.send_response(save_status)
+                self.send_header("Location", "/settings/network?ok=updated")
+                self.end_headers()
+
+            def log_message(self, *_args):
+                pass
+
+        script = (ROOT / "scripts/docker_smoke.sh").read_text()
+        functions = []
+        for name in ("fail", "header_value", "network_settings_csrf", "save_network_settings", "validate_hostname_boundary"):
+            match = re.search(rf"(?ms)^{name}\(\) \{{\n.*?^\}}", script)
+            assert match is not None
+            functions.append(match.group())
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                environment = {**os.environ, "base_url": f"http://127.0.0.1:{server.server_port}",
+                               "workspace": directory, "container": "fixture",
+                               "network_allowed_host": allowed_host, "network_unlisted_host": unlisted_host}
+                command = "set -Eeuo pipefail\n" + "\n".join(functions) + """
+# Execute only the parser portion of docker exec against this HTTP fixture.
+docker() { shift 4; python3 "$@"; }
+cookies="smoke_session=admin"
+csrf="$(network_settings_csrf "$cookies" false)"
+validate_hostname_boundary false
+save_network_settings "$cookies" true "$csrf"
+csrf="$(network_settings_csrf "$cookies" true)"
+validate_hostname_boundary true
+save_network_settings "$cookies" false "$csrf"
+network_settings_csrf "$cookies" false >/dev/null
+validate_hostname_boundary false
+"""
+                result = subprocess.run(["bash", "-c", command], env=environment,
+                                        capture_output=True, text=True, timeout=10)
+                return result, updates
+        finally:
+            server.shutdown()
+            thread.join()
+            server.server_close()
+
+    def test_toggle_round_trip_uses_authenticated_form_csrf_and_exact_hostnames(self):
+        result, updates = self.run_network_settings()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(updates), 2)
+        self.assertEqual(updates[0]["host_check_enabled"], ["on"])
+        self.assertNotIn("host_check_enabled", updates[1])
+        for form in updates:
+            self.assertRegex(form["allowed_hosts"][0], r"^127\.0\.0\.1:\d+,lake-pass-smoke\.example:8080$")
+
+    def test_smoke_rejects_wrong_defaults_locked_controls_unsaved_changes_and_missing_boundary(self):
+        for options in ({"initially_enabled": True}, {"locked": True}, {"apply_changes": False},
+                        {"reject_unlisted": False}, {"save_status": 200}):
+            with self.subTest(options=options):
+                result, _ = self.run_network_settings(**options)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
 
 
 if __name__ == "__main__":

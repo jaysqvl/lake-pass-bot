@@ -41,26 +41,45 @@ func TestLegacyConfigurationAndNeutralPrecedence(t *testing.T) {
 }
 
 func TestLegacyHostCheckEnabledAndNeutralPrecedence(t *testing.T) {
+	for _, test := range []struct {
+		name, legacy, canonical string
+		canonicalUnset          bool
+		enabled, configured     bool
+	}{
+		{name: "legacy disabled", legacy: "false", canonicalUnset: true, configured: true},
+		{name: "legacy enabled", legacy: "true", canonicalUnset: true, enabled: true, configured: true},
+		{name: "canonical false overrides legacy true", legacy: "true", canonical: "false", configured: true},
+		{name: "canonical true overrides legacy false", legacy: "false", canonical: "true", enabled: true, configured: true},
+		{name: "canonical empty restores UI control", legacy: "true"},
+		{name: "canonical whitespace restores UI control", legacy: "true", canonical: "  "},
+		{name: "legacy empty permits UI control", canonicalUnset: true},
+		{name: "canonical empty ignores invalid legacy override", legacy: "sometimes"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			isolateEnvironment(t)
+			t.Setenv("BUNTZEN_HOST_CHECK_ENABLED", test.legacy)
+			if test.canonicalUnset {
+				unsetForTest(t, "LAKE_PASS_HOST_CHECK_ENABLED")
+			} else {
+				t.Setenv("LAKE_PASS_HOST_CHECK_ENABLED", test.canonical)
+			}
+			cfg, err := Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.HostCheckEnabled != test.enabled || cfg.HostCheckConfigured != test.configured {
+				t.Fatalf("host check enabled/configured = %t/%t, want %t/%t", cfg.HostCheckEnabled, cfg.HostCheckConfigured, test.enabled, test.configured)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsInvalidLegacyHostCheckOverride(t *testing.T) {
 	isolateEnvironment(t)
 	unsetForTest(t, "LAKE_PASS_HOST_CHECK_ENABLED")
-	t.Setenv("BUNTZEN_HOST_CHECK_ENABLED", "false")
-	cfg, err := Load()
-	if err != nil || cfg.HostCheckEnabled {
-		t.Fatalf("legacy host check setting = %t, error = %v", cfg.HostCheckEnabled, err)
-	}
-
-	t.Setenv("BUNTZEN_HOST_CHECK_ENABLED", "true")
-	t.Setenv("LAKE_PASS_HOST_CHECK_ENABLED", "false")
-	cfg, err = Load()
-	if err != nil || cfg.HostCheckEnabled {
-		t.Fatalf("canonical false must override legacy true: setting = %t, error = %v", cfg.HostCheckEnabled, err)
-	}
-
-	t.Setenv("BUNTZEN_HOST_CHECK_ENABLED", "false")
-	t.Setenv("LAKE_PASS_HOST_CHECK_ENABLED", "")
-	cfg, err = Load()
-	if err != nil || !cfg.HostCheckEnabled {
-		t.Fatalf("canonical empty must preserve the default: setting = %t, error = %v", cfg.HostCheckEnabled, err)
+	t.Setenv("BUNTZEN_HOST_CHECK_ENABLED", "sometimes")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid legacy hostname override to be rejected")
 	}
 }
 

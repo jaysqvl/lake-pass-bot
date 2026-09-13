@@ -34,6 +34,7 @@ func TestLakeMigrationPreservesBookingsCredentialsAndReservation(t *testing.T) {
 		DROP TABLE user_otp_preferences;
 		DROP TABLE lake_settings;
 		DROP TABLE account_settings;
+		DROP TABLE network_settings;
 		ALTER TABLE profiles DROP COLUMN provider_id;
 		ALTER TABLE profiles DROP COLUMN lake_id;
 		ALTER TABLE booking_requests DROP COLUMN vehicle_keyword;

@@ -19,6 +19,7 @@ The complete router is in `internal/web/server.go`. GET routes also accept HEAD.
 | GET/POST `/setup` | One-time administrator setup requiring a host-generated token, CSRF and browser-origin checks. Public mode refuses an uninitialized database; initialized setup redirects to sign-in. |
 | `/account`, `/account/password`, `/account/username`; POST `/logout` | Authenticated self-service. Account changes verify the current password. Mutations require session-bound CSRF and browser-origin checks. |
 | `/admin/users`, `/admin/users/new`, `/admin/users/{id}`, and password/delete actions | Active administrator only, plus authentication and mutation checks. The permanent administrator has additional deletion/role protections. |
+| GET/POST `/settings/network` | Active administrator only. Updates require CSRF and browser-origin checks, validate the host list, and keep the current Host reachable when enabling enforcement. Public HTTPS and explicit deployment overrides lock these controls. |
 | `/`; `/sources` with new/edit/health/pair actions; `/profiles` with new/edit actions; `/bookings` with new/edit/run actions | Authenticated owner. Resource lookups and linked IDs are scoped to the account in storage; mutations require CSRF and browser-origin checks. |
 | `/jobs`, `/jobs/{id}`, `/jobs/{id}/events`, POST `/jobs/{id}/decision` | Authenticated owner. Streams recheck session validity; decisions also require CSRF and browser-origin checks. |
 
@@ -26,12 +27,14 @@ No public registration, password-recovery link, webhook, file upload, diagnostic
 archive download, or separate public JSON API is registered. Administrator status
 does not bypass ownership of another account's sources, profiles, bookings or jobs.
 
-Private HTTP hostname enforcement is optional through
-`LAKE_PASS_HOST_CHECK_ENABLED`. The supplied Compose templates disable it for
-trusted LAN hosting; older stacks without this setting retain enforcement.
-Disabling it accepts any syntactically valid Host and ignores the private host
-allowlist. Authentication, CSRF, and browser-origin checks remain active. The
-toggle does not relax public HTTPS or public health-check authority validation.
+Private HTTP hostname enforcement is off by default and can be enabled by an
+administrator in Settings > Network, with a persisted host/port allowlist. Changes
+apply immediately and survive restarts. A nonempty `LAKE_PASS_HOST_CHECK_ENABLED`
+overrides the saved settings and locks their UI controls; deployment host entries
+apply during this override. With checks disabled, any syntactically valid Host is
+accepted and the private host allowlist is ignored. Authentication, CSRF, and
+browser-origin checks remain active. Neither the UI setting nor its deployment
+override relaxes public HTTPS or public health-check authority validation.
 
 Public mode requires an exact HTTPS origin and trusts visitor headers only from
 explicit connector socket addresses. Session and CSRF cookies use `__Host-`

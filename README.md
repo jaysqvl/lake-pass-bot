@@ -51,7 +51,9 @@ first.
    - if using BlueBubbles, set `BLUEBUBBLES_URL` and approve its origin/network with `LAKE_PASS_BLUEBUBBLES_ENDPOINTS` as described in [provider access](docs/public-exposure.md#outbound-provider-access); and
    - leave `SCHEDULES_ENABLED=false` until onboarding is complete.
 
-   The supplied templates set `LAKE_PASS_HOST_CHECK_ENABLED=false` for private LAN hosting: you can use your Docker host address or rename a reverse proxy hostname without changing an allowlist. Authentication, CSRF tokens, and browser-origin checks remain enabled. To restrict hostnames, set the toggle to `true` and list exact host/port values in `LAKE_PASS_ALLOWED_HOSTS`; that list is ignored in private mode while the toggle is `false`.
+   Hostname checks are off by default for private LAN hosting: you can use your Docker host address or rename a reverse proxy hostname without changing an allowlist. Administrators can enable checks and edit allowed host/port values in **Settings > Network**. Saving applies immediately and survives restarts. Authentication, CSRF tokens, and browser-origin checks remain enabled.
+
+   Leave `LAKE_PASS_HOST_CHECK_ENABLED` empty to manage this in the UI. An explicit `true` or `false` is an operator override that locks the UI controls; use `false` to recover from a hostname lockout. See [private HTTP hostnames](docs/public-exposure.md#private-http-hostnames) for upgrades and recovery.
 
    If a reverse proxy rewrites the `Host` header, add the browser-facing origin to `LAKE_PASS_ALLOWED_ORIGINS`; with hostname checks enabled, also allow the rewritten authority. Prefer preserving the browser-facing Host. Public HTTPS mode always requires its configured public Host and trusted connector settings, regardless of the toggle; see [public HTTPS configuration](docs/public-exposure.md).
 
