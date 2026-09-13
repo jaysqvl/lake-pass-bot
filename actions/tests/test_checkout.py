@@ -61,6 +61,33 @@ class CheckoutTests(unittest.TestCase):
             observer._on_request_finished(request)
             self.assertFalse(observer.response_valid)
 
+    def test_receipt_decoder_rejects_external_limits_and_keeps_programming_errors_visible(self):
+        observer = CheckoutConfirmation(None, SimpleNamespace(allows_yodel_url=lambda url: True))
+        request = SimpleNamespace(method="POST", url="https://provider.example/api/orders/checkout")
+        response = SimpleNamespace(status=200, body=lambda: json.dumps(receipt()).encode())
+        request.response = lambda: response
+        observer._on_request(request)
+        observer._on_request_finished(request)
+        self.assertTrue(observer.response_valid)
+
+        for name, body in (
+            ("integer exceeds decoder limit", b'{"payment":{"orderId":' + b"1" * 5000 + b"}}"),
+            ("nesting exceeds decoder limit", b"[" * 20000 + b"0" + b"]" * 20000),
+            ("invalid JSON", b'{"payment":'),
+            ("invalid encoding", b"\xff"),
+        ):
+            with self.subTest(name=name):
+                response.body = lambda: body
+                observer._on_request_finished(request)
+                self.assertTrue(observer.response_seen)
+                self.assertFalse(observer.response_valid)
+
+        # Playwright's body contract is bytes; an adapter returning an arbitrary
+        # object is a programming error and must still escape the recovery path.
+        response.body = lambda: object()
+        with self.assertRaises(TypeError):
+            observer._on_request_finished(request)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -266,7 +266,7 @@ func lakeSettingsSections(lake destinations.Lake, value model.LakeSettings) []fo
 			{Name: "release_days_before", Label: "Days before your visit", Type: "number", Value: strconv.Itoa(value.ReleaseDaysBefore), Required: true, Min: "0", Max: "365", Step: "1", Help: "Use 0 when passes release on the visit date."},
 		}},
 		{Title: "Pass preferences", Help: "Default order for new requests. Choose None to skip a slot.", Class: "form-grid-pass-preferences", Fields: passes},
-		{Title: "Booking site URLs", Help: "Use paths on a booking site approved by your operator.", Fields: []formField{
+		{Title: "Booking site URLs", Advanced: true, Help: "Use paths on a booking site approved by your operator.", Fields: []formField{
 			{Name: "all_day_pass_url", Label: "All-day pass URL", Type: "url", Value: value.AllDayPassURL},
 			{Name: "half_day_pass_url", Label: "Half-day pass URL", Type: "url", Value: value.HalfDayPassURL},
 		}},

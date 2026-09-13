@@ -1,0 +1,20 @@
+{{define "booking-cart"}}
+<div class="shoppingCard inactive">
+  <div class="cartDigit">
+    <div class="counter"><span class="count">{{if .CartQuantity}}1{{else}}0{{end}}</span></div>
+  </div>
+  {{if .CartQuantity}}
+  <div class="shoppingMainList">
+    <ul>
+      <li class="shoppingList singleItemList">
+        <div class="CardListing">
+          <div class="ClassificationInnerRow">
+            <input class="count" value="{{.CartQuantity}}">
+          </div>
+        </div>
+      </li>
+    </ul>
+  </div>
+  {{end}}
+</div>
+{{end}}

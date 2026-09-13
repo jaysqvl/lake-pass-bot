@@ -71,6 +71,10 @@ def validate_start_has_no_secrets(frame: Mapping[str, Any]) -> None:
         )
 
 
+def _reject_non_finite_number(value: str) -> None:
+    raise ValueError("non-finite JSON number")
+
+
 class JsonLineStream:
     """Reads and writes bounded UTF-8 JSON objects, one per line."""
 
@@ -93,9 +97,7 @@ class JsonLineStream:
         try:
             value = json.loads(
                 raw.decode("utf-8"),
-                parse_constant=lambda _value: (_ for _ in ()).throw(
-                    ValueError("non-finite JSON number")
-                ),
+                parse_constant=_reject_non_finite_number,
             )
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ProtocolError("control frame is not valid UTF-8 JSON") from exc

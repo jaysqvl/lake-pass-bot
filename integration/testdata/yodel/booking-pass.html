@@ -1,0 +1,132 @@
+<!doctype html>
+<html>
+  <body>
+    {{template "booking-cart" .}}
+    <script>
+      function recordSelection(path) {
+        const request = new XMLHttpRequest();
+        request.open("POST", path, false);
+        request.send();
+      }
+
+      function chooseVehicle(choice) {
+        const popup = choice.closest('.popup');
+        for (const item of popup.querySelectorAll('[role="radio"]')) {
+          item.setAttribute('aria-checked', String(item === choice));
+          item.querySelector('input[type="radio"]').checked = item === choice;
+        }
+        const save = document.getElementById(popup.id + '-save-btn');
+        save.setAttribute('aria-disabled', 'false');
+        save.classList.remove('disabled', 'btn-disbled');
+      }
+
+      function saveVehicle(save) {
+        if (save.getAttribute('aria-disabled') === 'true') return false;
+        const popup = save.closest('.popup');
+        const selected = popup.querySelector('[role="radio"][aria-checked="true"]');
+        if (!selected || !selected.querySelector('input[type="radio"]').checked) return false;
+        const label = selected.getAttribute('aria-label');
+        const trigger = document.getElementById(popup.id.replace('vehicleSmartSelect_', 'vehicleSelectTrigger_'));
+        trigger.textContent = label;
+        trigger.classList.add('selectedProfileValue');
+        trigger.setAttribute('aria-label', 'VEHICLE INFO mandatory, ' + label + ' selected');
+        document.getElementById('vehicle').value = label;
+        popup.style.display = 'none';
+        recordSelection('/synthetic/vehicle-selected');
+        return false;
+      }
+
+      function chooseTargetDate(button) {
+        button.previousElementSibling.classList.remove('active');
+        button.classList.add('active');
+        document.getElementById('target-date').value = '2030-01-06';
+        recordSelection('/synthetic/date-selected');
+      }
+
+      function openVehicleSelector() {
+        document.getElementById('vehicleSmartSelect_101_101_Vehicle_1').style.display = 'block';
+        return false;
+      }
+    </script>
+    <div class="card ImageCard">
+      <h2>All-day pass</h2>
+      <div class="dateMain">
+        <div class="dateHeader"><span class="month">January-2030</span></div>
+        <div class="datelist">
+          <button class="date active" type="button" aria-label="Saturday 05">05</button>
+          <button class="date" type="button" aria-label="Sunday 06" onclick="chooseTargetDate(this)">06</button>
+        </div>
+      </div>
+      <!-- Match the September 2026 Yodel widget, including the misleading heading,
+           hidden choices, explicit Save, and the selected value on the pass card. -->
+      <div class="listing shadowSpace row">
+        <span class="cartLabel" aria-label="2. Select a Vehicle / Boat Trailer Info mandatory" tabindex="-1">
+          <span aria-hidden="true">2. Select a Vehicle / Boat Trailer Info*</span>
+        </span>
+        <div class="profileCol selectCustomSearch spacingAround col-100">
+          <span class="profileLabel item-label" aria-label="VEHICLE INFO mandatory" tabindex="-1">
+            <span aria-hidden="true">VEHICLE INFO*</span>
+          </span>
+          <a id="vehicleSelectTrigger_101_101_Vehicle_1"
+             class="themeBtn largeBtn themeBtnYellow selectModalMake button button-round"
+             href="#" type="text" aria-label="Select VEHICLE INFO mandatory"
+             onclick="return openVehicleSelector()">Select...</a>
+          <div id="vehicleSmartSelect_101_101_Vehicle_1"
+               class="themeModel commanModal selectStateModal popup" style="display:none">
+            <div class="main-yselectModal">
+              <div class="yselectModal">
+                <div class="cardHeader"><h2 class="heading" tabindex="0">Select Vehicle for this Pass</h2></div>
+                <div class="card-body">
+                  <ul role="radiogroup" aria-label="Select Vehicle for this Pass">
+                    <li tabindex="0" role="radio" aria-checked="false"
+                        aria-label="{{.VehicleLabel}}" onclick="chooseVehicle(this)">
+                      <label>
+                        {{.VehicleLabel}}
+                        <input type="radio" tabindex="-1" aria-hidden="true"
+                               name="select-vehicleSmartSelect_101_101_Vehicle_1" value="SYNTHETIC__BC">
+                        <span></span>
+                      </label>
+                    </li>
+                  </ul>
+                </div>
+                <div class="cardfooter">
+                  <a id="vehicleSmartSelect_101_101_Vehicle_1-save-btn"
+                     class="themeBtn btn-disbled button disabled" href="#" type="text"
+                     aria-disabled="true" onclick="return saveVehicle(this)">Save</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <form method="post" action="/cart">
+        <input id="target-date" type="hidden" name="target_date">
+        <input id="vehicle" type="hidden" name="vehicle">
+        <input type="hidden" name="pass" value="all_day">
+        <a href="#" onclick="this.closest('form').requestSubmit(); return false">Add To Cart</a>
+      </form>
+    </div>
+    <div id="addVehicleSelectMakeModel" class="themeModel commanModal selectStateModal popup" style="display:none">
+      <ul role="radiogroup" aria-label="Select Make ">
+        <li tabindex="0" role="radio" aria-checked="false" aria-label="Synthetic vehicle">
+          <label>Synthetic vehicle</label>
+        </li>
+      </ul>
+    </div>
+    <!-- Authenticated DOM and traffic deliberately contain synthetic secrets.
+         Diagnostics must capture none of them, including response bodies. -->
+    <input type="hidden" value="{{.Phone}}">
+    <input type="hidden" value="{{.OTP}}">
+    <p id="private-details">Phone {{.Phone}} OTP {{.OTP}}</p>
+    <script>
+      fetch('/synthetic/diagnostic-secrets', {
+        method: 'POST',
+        headers: {Authorization: 'Bearer ' + {{.BearerToken}}},
+        body: {{.Phone}} + ' ' + {{.OTP}}
+      }).then(response => response.text()).then(body => {
+        document.getElementById('private-details').textContent = body;
+        return fetch('/synthetic/diagnostic-ack', {method: 'POST'});
+      });
+    </script>
+  </body>
+</html>

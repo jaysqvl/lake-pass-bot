@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -51,27 +52,70 @@ func (s LakeSettings) ApplyTo(request BookingRequest) BookingRequest {
 	return request
 }
 
-func (s LakeSettings) validationRequest() BookingRequest {
-	// Reuse the same destination, timing, pass-order and URL validation as
-	// bookings, supplying only the unrelated per-request required fields.
-	request := s.ApplyTo(DefaultAccountSettings().ApplyToBooking(BookingRequest{
-		Name: "Lake defaults", ProfileID: 1, TargetDate: "2000-01-01",
-		ConfirmationMode: RunModeManual,
-	}))
-	// A lake can be configured before a vehicle is chosen. Each booking must
-	// still supply a concrete vehicle before it can be saved or run.
-	if strings.TrimSpace(request.VehicleKeyword) == "" {
-		request.VehicleKeyword = "Unconfigured lake vehicle"
-	}
-	return request
-}
-
 func (s LakeSettings) Validate() error {
-	return s.validationRequest().Validate()
+	if problems := s.validationProblems(); len(problems) > 0 {
+		return errors.New(strings.Join(problems, "; "))
+	}
+	return nil
 }
 
 func (s LakeSettings) ValidateForOrigins(allowedOrigins []string) error {
-	return s.validationRequest().ValidateForOrigins(allowedOrigins)
+	if err := s.Validate(); err != nil {
+		return err
+	}
+	return validateYodelURLs(allowedOrigins,
+		yodelURL{s.AllDayPassURL, "all-day pass URL"},
+		yodelURL{s.HalfDayPassURL, "half-day pass URL"},
+	)
+}
+
+func (s LakeSettings) validationProblems() []string {
+	var problems []string
+	lake, lakeErr := destinations.Resolve(s.LakeID)
+	if lakeErr != nil {
+		problems = append(problems, lakeErr.Error())
+	}
+	// Defaults may be saved before a vehicle is selected. A booking separately
+	// requires one, while both paths apply the same size limit.
+	if len(s.VehicleKeyword) > MaxDefaultVehicleBytes {
+		problems = append(problems, "vehicle is too long")
+	}
+	if len(s.Timezone) > MaxTimezoneBytes {
+		problems = append(problems, "timezone is too long")
+	} else if _, err := time.LoadLocation(s.Timezone); err != nil {
+		problems = append(problems, "timezone is invalid")
+	}
+	if _, err := time.Parse("15:04", s.ReleaseTime); err != nil {
+		problems = append(problems, "release time must use HH:MM")
+	}
+	if s.ReleaseDaysBefore < 0 || s.ReleaseDaysBefore > MaxReleaseDaysBefore {
+		problems = append(problems, "release days before visit must be between 0 and 365")
+	}
+	if len(s.PreferredPasses) == 0 {
+		problems = append(problems, "at least one pass preference is required")
+	} else if len(s.PreferredPasses) > 3 {
+		problems = append(problems, "at most three pass preferences are allowed")
+	}
+	seen := make(map[PassType]bool, len(s.PreferredPasses))
+	for _, pass := range s.PreferredPasses {
+		if lakeErr == nil && !slices.Contains(lake.SupportedPasses, string(pass)) {
+			problems = append(problems, "pass preference is not supported by the selected lake")
+		} else if seen[pass] {
+			problems = append(problems, "each pass preference can only be selected once")
+		}
+		seen[pass] = true
+	}
+	if seen[PassAllDay] {
+		if err := validateHTTPURL(s.AllDayPassURL, "all-day pass URL"); err != nil {
+			problems = append(problems, err.Error())
+		}
+	}
+	if seen[PassAfternoon] || seen[PassMorning] {
+		if err := validateHTTPURL(s.HalfDayPassURL, "half-day pass URL"); err != nil {
+			problems = append(problems, err.Error())
+		}
+	}
+	return problems
 }
 
 // AccountSettings supply browser defaults for new profiles and preparation /
@@ -118,8 +162,42 @@ func (s AccountSettings) Validate() error {
 	if s.DefaultTimeoutMS < 1_000 || s.DefaultTimeoutMS > 120_000 {
 		return errors.New("default timeout must be between 1000 and 120000 milliseconds")
 	}
-	if problems := s.ApplyToBooking(BookingRequest{}).preparationProblems(); len(problems) > 0 {
+	timing := preparationTiming{
+		PrepMinutesBefore: s.PrepMinutesBefore, AuthDeadlineMinutesBefore: s.AuthDeadlineMinutesBefore,
+		PollDeadlineSeconds: s.PollDeadlineSeconds, PollMinSeconds: s.PollMinSeconds, PollMaxSeconds: s.PollMaxSeconds,
+	}
+	if problems := timing.validationProblems(); len(problems) > 0 {
 		return errors.New(strings.Join(problems, "; "))
 	}
 	return nil
+}
+
+// preparationTiming is the shared timing policy for account defaults and
+// individual requests. It has no account, destination, or booking identity.
+type preparationTiming struct {
+	PrepMinutesBefore         int
+	AuthDeadlineMinutesBefore int
+	PollDeadlineSeconds       int
+	PollMinSeconds            float64
+	PollMaxSeconds            float64
+}
+
+func (t preparationTiming) validationProblems() []string {
+	var problems []string
+	if t.PrepMinutesBefore < 0 || t.AuthDeadlineMinutesBefore < 0 {
+		problems = append(problems, "preparation offsets cannot be negative")
+	} else if t.PrepMinutesBefore > MaxPrepMinutesBefore {
+		problems = append(problems, "preparation window cannot exceed 180 minutes")
+	}
+	if t.AuthDeadlineMinutesBefore > t.PrepMinutesBefore {
+		problems = append(problems, "auth deadline must fall within the preparation window")
+	}
+	if t.PollDeadlineSeconds <= 0 || t.PollDeadlineSeconds > 900 ||
+		t.PollMinSeconds < 0.05 || t.PollMinSeconds > 60 ||
+		t.PollMaxSeconds < t.PollMinSeconds || t.PollMaxSeconds > 60 ||
+		math.IsNaN(t.PollMinSeconds) || math.IsNaN(t.PollMaxSeconds) ||
+		math.IsInf(t.PollMinSeconds, 0) || math.IsInf(t.PollMaxSeconds, 0) {
+		problems = append(problems, "poll timing must fit the worker bounds")
+	}
+	return problems
 }

@@ -1,0 +1,9 @@
+<!doctype html>
+<html>
+  <body>
+    {{template "booking-cart" .}}
+    <form method="post" action="/checkout">
+      <button id="checkOutButton" type="submit">Checkout</button>
+    </form>
+  </body>
+</html>

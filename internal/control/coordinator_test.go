@@ -141,9 +141,67 @@ func TestCoordinatorCrashAfterConfirmationIsOutcomeUnknown(t *testing.T) {
 }
 
 func TestSanitizeMessageRemovesSecretsAndCodes(t *testing.T) {
-	got := sanitizeMessage("5559876543 729104", model.ProfileCredentials{Phone: "5559876543"})
-	if got != "[redacted] [redacted-code]" {
-		t.Fatalf("sanitized = %q", got)
+	for _, test := range []struct {
+		name, message, want string
+	}{
+		{"known phone and code", "5559876543 729104", "[redacted] [redacted-code]"},
+		{"adjacent codes", "1234,56789 12345678", "[redacted-code],[redacted-code] [redacted-code]"},
+		{"short and long numbers", "123 123456789", "123 123456789"},
+		{"codes touching text", "OTP123456expired", "OTP[redacted-code]expired"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := sanitizeMessage(test.message, model.ProfileCredentials{Phone: "5559876543"})
+			if got != test.want {
+				t.Fatalf("sanitized = %q; want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestCoordinatorRedactsAdjacentCodesBeforePublishing(t *testing.T) {
+	process := newFakeProcess()
+	hub := NewHub()
+	live, unsubscribe := hub.Subscribe("42")
+	defer unsubscribe()
+	message := "5559876543 123456 654321"
+	process.events <- frame("worker.ready", map[string]any{"action": "yodel", "protocol": float64(actionproc.ProtocolVersion)})
+	process.events <- frame("run.status", map[string]any{"phase": "login", "message": message})
+	process.events <- frame("run.complete", map[string]any{"status": "failed", "message": message})
+	close(process.events)
+	process.done <- actionproc.Result{ExitCode: 1}
+	close(process.done)
+
+	var eventMessage string
+	result, err := Run(context.Background(), RunInput{
+		JobID: 42, Command: model.CommandAuthCheck, Mode: model.RunModeManual,
+		Credentials: model.ProfileCredentials{Phone: "5559876543"},
+		Provider:    &fakeProvider{}, Hub: hub,
+		NewProcess: func(context.Context) (ActionProcess, error) { return process, nil },
+		Hooks: RunHooks{Event: func(kind, message string) {
+			if kind == "run.login" {
+				eventMessage = message
+			}
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "[redacted] [redacted-code] [redacted-code]"
+	if result.Message != want || eventMessage != want {
+		t.Errorf("result message=%q event message=%q; want %q", result.Message, eventMessage, want)
+	}
+	for {
+		select {
+		case event := <-live:
+			if event.Kind == "status" {
+				if got := event.Data.(map[string]any)["message"]; got != want {
+					t.Errorf("live status message=%q; want %q", got, want)
+				}
+				return
+			}
+		default:
+			t.Fatal("worker status was not published to the live job stream")
+		}
 	}
 }
 

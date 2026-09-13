@@ -86,7 +86,7 @@ func newRenderer(version, revision string) (*Renderer, error) {
 		"list":             {"assets/templates/base.html", "assets/templates/list.html"},
 		"form":             {"assets/templates/base.html", "assets/templates/form_fields.html", "assets/templates/form.html"},
 		"lake":             {"assets/templates/base.html", "assets/templates/form_fields.html", "assets/templates/resource_card.html", "assets/templates/lake.html"},
-		"settings":         {"assets/templates/base.html", "assets/templates/form_fields.html", "assets/templates/settings_nav.html", "assets/templates/settings_controls.html", "assets/templates/settings.html"},
+		"settings":         {"assets/templates/base.html", "assets/templates/form_fields.html", "assets/templates/settings_nav.html", "assets/templates/settings.html"},
 		"network_settings": {"assets/templates/base.html", "assets/templates/settings_nav.html", "assets/templates/network_settings.html"},
 		"jobs":             {"assets/templates/base.html", "assets/templates/jobs_table.html", "assets/templates/jobs.html"},
 		"job":              {"assets/templates/base.html", "assets/templates/job.html"},

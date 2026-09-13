@@ -26,10 +26,12 @@ class ProtocolTests(unittest.TestCase):
     def test_rejects_boolean_version_and_non_finite_number(self) -> None:
         with self.assertRaises(ProtocolError):
             JsonLineStream(io.BytesIO(b'{"v":true,"type":"x"}\n'), io.BytesIO()).read()
-        with self.assertRaises(ProtocolError):
-            JsonLineStream(
-                io.BytesIO(b'{"v":2,"type":"x","value":NaN}\n'), io.BytesIO()
-            ).read()
+        for value in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                ProtocolError, "non-finite number"
+            ):
+                frame = f'{{"v":2,"type":"x","value":{value}}}\n'.encode()
+                JsonLineStream(io.BytesIO(frame), io.BytesIO()).read()
 
     def test_rejects_oversized_or_unterminated_input(self) -> None:
         oversized = io.BytesIO(b"{" + b"x" * MAX_FRAME_BYTES + b"}\n")

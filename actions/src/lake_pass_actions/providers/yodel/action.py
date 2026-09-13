@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Iterable, Optional
 
+from playwright.sync_api import Error as PlaywrightError
+
 from .calendar_dates import select_target_date
 from ...config import ActionConfig
 from .checkout import CheckoutConfirmation
@@ -241,7 +243,7 @@ class YodelAction:
             self._require_auth_window(auth_deadline_at, challenge_id)
             try:
                 submit.click()
-            except Exception as exc:
+            except PlaywrightError as exc:
                 self.control.otp_failed(challenge_id, "trigger_failed")
                 raise ActionError("Yodel mobile login Next control could not be clicked") from exc
             self.control.otp_triggered(challenge_id)
@@ -276,7 +278,7 @@ class YodelAction:
         self._require_auth_window(auth_deadline_at, challenge_id)
         try:
             resend.click()
-        except Exception as exc:
+        except PlaywrightError as exc:
             self.control.otp_failed(challenge_id, "trigger_failed")
             raise ActionError("Yodel OTP resend could not be clicked") from exc
         self.control.otp_triggered(challenge_id)
@@ -416,9 +418,7 @@ class YodelAction:
                 )
                 if not self.ensure_authenticated(auth_deadline_at=auth_deadline_at):
                     raise ActionError("Yodel session expired before release")
-        except ActionError:
-            raise
-        except Exception as exc:
+        except PlaywrightError as exc:
             raise ActionError("Yodel session keepalive failed") from exc
 
     def try_booking_once(self, mode: str) -> BookingResult:
@@ -627,7 +627,7 @@ class YodelAction:
             return bool(
                 locator.is_visible(timeout=500) and locator.is_enabled(timeout=500)
             )
-        except Exception:
+        except PlaywrightError:
             return False
 
     def _url_for(self, preference: PassPreference) -> str:
@@ -651,7 +651,7 @@ class YodelAction:
             try:
                 close.click(timeout=2_000)
                 self.page.wait_for_timeout(250)
-            except Exception:
+            except PlaywrightError:
                 logger.debug("Public Yodel notice could not be dismissed")
                 return
 
@@ -662,7 +662,7 @@ class YodelAction:
             return False
         try:
             entry.click(timeout=5_000)
-        except Exception as exc:
+        except PlaywrightError as exc:
             raise ActionError("Yodel sign-in panel could not be opened") from exc
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline:
@@ -705,7 +705,7 @@ class YodelAction:
                     }"""
                 )
             )
-        except Exception:
+        except PlaywrightError:
             return False
 
     def _has_otp_challenge(self, timeout_ms: int = 500) -> bool:
@@ -720,7 +720,7 @@ class YodelAction:
             locator = self.page.locator(selector)
             try:
                 count = min(locator.count(), 8)
-            except Exception:
+            except PlaywrightError:
                 continue
             for index in range(count):
                 item = locator.nth(index)
@@ -729,7 +729,7 @@ class YodelAction:
                         timeout=1_000
                     ):
                         locators.append(item)
-                except Exception:
+                except PlaywrightError:
                     continue
             if locators:
                 return locators
@@ -745,7 +745,7 @@ class YodelAction:
                     or item.get_attribute("size") == "1"
                 ):
                     return True
-            except Exception:
+            except PlaywrightError:
                 continue
         return False
 
@@ -771,14 +771,14 @@ class YodelAction:
             )
             if ancestor.count() > 0:
                 return ancestor.first
-        except Exception:
+        except PlaywrightError:
             return None
         return None
 
     def _pass_is_available(self, container: Any) -> bool:
         try:
             text = container.inner_text(timeout=2_000).lower()
-        except Exception:
+        except PlaywrightError:
             text = ""
         if any(
             token in text
@@ -813,7 +813,7 @@ class YodelAction:
             locator.click()
             self._human_pause()
             return True
-        except Exception:
+        except PlaywrightError:
             return False
 
     def _visible_locator(
@@ -834,7 +834,7 @@ class YodelAction:
                         locator = matches.nth(index)
                         if locator.is_visible():
                             return locator
-                except Exception:
+                except PlaywrightError:
                     continue
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -848,7 +848,7 @@ class YodelAction:
                 state="visible", timeout=min(timeout_ms, 5_000)
             )
             self.page.wait_for_timeout(500)
-        except Exception:
+        except PlaywrightError:
             logger.debug("Page did not fully settle before its bounded deadline")
 
     def _human_pause(self, minimum: float = 0.15, maximum: float = 0.65) -> None:

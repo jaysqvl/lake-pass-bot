@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from urllib.parse import urlparse
 
+from playwright.sync_api import Error as PlaywrightError
+
 from lake_pass_actions.control import Credentials
 from lake_pass_actions.errors import ActionError, Cancelled, OutcomeUnknown, ProtocolError
 from lake_pass_actions.lakes.buntzen import LAKE, PASS_PREFERENCES
@@ -31,7 +33,7 @@ class Locator:
     def click(self, **kwargs) -> None:
         self.events.append(("click", self.name))
         if self.fails:
-            raise RuntimeError("ambiguous click failure")
+            raise PlaywrightError("ambiguous click failure")
 
 
 class Inbox:
@@ -290,6 +292,44 @@ class ReleaseAction(YodelAction):
 
 
 class YodelTests(unittest.TestCase):
+    def test_locator_search_recovers_from_browser_errors(self) -> None:
+        action = object.__new__(YodelAction)
+        action.page = Mock()
+        action.page.locator.side_effect = PlaywrightError("page detached")
+        action.control = SimpleNamespace(inbox=Inbox())
+
+        self.assertIsNone(action._visible_locator(("button",), timeout_ms=0))
+
+    def test_locator_search_does_not_hide_programming_errors(self) -> None:
+        action = object.__new__(YodelAction)
+        action.page = Mock()
+        action.page.locator.side_effect = TypeError("invalid selector implementation")
+        action.control = SimpleNamespace(inbox=Inbox())
+
+        with self.assertRaisesRegex(TypeError, "invalid selector implementation"):
+            action._visible_locator(("button",), timeout_ms=0)
+
+    def test_click_failure_only_recovers_from_browser_errors(self) -> None:
+        action = object.__new__(YodelAction)
+        locator = Mock()
+        action._visible_locator = Mock(return_value=locator)
+        locator.click.side_effect = PlaywrightError("element detached")
+        self.assertFalse(action._click_first(Mock(), ("button",), timeout_ms=0))
+
+        locator.click.side_effect = TypeError("invalid click implementation")
+        with self.assertRaisesRegex(TypeError, "invalid click implementation"):
+            action._click_first(Mock(), ("button",), timeout_ms=0)
+
+    def test_authentication_probe_does_not_hide_programming_errors(self) -> None:
+        action = object.__new__(YodelAction)
+        action.page = Mock()
+        action.page.evaluate.side_effect = PlaywrightError("page detached")
+        self.assertFalse(action._is_authenticated())
+
+        action.page.evaluate.side_effect = TypeError("invalid probe implementation")
+        with self.assertRaisesRegex(TypeError, "invalid probe implementation"):
+            action._is_authenticated()
+
     def test_visible_mobile_number_input_is_not_an_otp_challenge(self) -> None:
         class TestLocator:
             def __init__(self, visible: bool) -> None:
@@ -324,8 +364,8 @@ class YodelTests(unittest.TestCase):
     def test_auth_does_not_navigate_or_request_credentials_when_trace_stop_fails(self) -> None:
         events = []
         action = DeadlineAction(events)
-        action.diagnostics.pause_for_auth = lambda: (_ for _ in ()).throw(
-            ActionError("synthetic trace stop failure")
+        action.diagnostics.pause_for_auth = Mock(
+            side_effect=ActionError("synthetic trace stop failure")
         )
 
         with self.assertRaises(ActionError):
@@ -427,8 +467,8 @@ class YodelTests(unittest.TestCase):
         events = []
         action = DeadlineAction(events, authenticated=False)
         deadline = datetime.now(timezone.utc) - timedelta(seconds=1)
-        action.ensure_authenticated = lambda **kwargs: (_ for _ in ()).throw(
-            AssertionError("reauthentication must not start after the deadline")
+        action.ensure_authenticated = Mock(
+            side_effect=AssertionError("reauthentication must not start after the deadline")
         )
         with patch("lake_pass_actions.providers.yodel.action.random.random", return_value=1.0):
             with self.assertRaises(ActionError):

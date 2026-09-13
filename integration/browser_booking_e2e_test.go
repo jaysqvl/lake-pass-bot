@@ -445,29 +445,23 @@ func (f *bookingFlow) serveYodel(response http.ResponseWriter, request *http.Req
 	case request.Method == http.MethodGet && request.URL.Path == "/buntzen-lake":
 		f.probeLoads++
 		http.SetCookie(response, &http.Cookie{Name: "synthetic_session", Value: bookingBearerToken, Path: "/", Secure: true, HttpOnly: true})
-		writeHTML(response, `<html><body><script>localStorage.setItem("BearerToken", "`+bookingBearerToken+`");</script><a href="/account">My Account</a></body></html>`)
+		writeYodelPage(response, "authenticated.html", yodelFixtureData{BearerToken: bookingBearerToken})
 	case request.Method == http.MethodGet && request.URL.Path == "/buntzen-lake/All-Day-Pass":
 		f.passLoads++
-		page := bookingPassPage
+		data := yodelFixtureData{
+			BearerToken:  bookingBearerToken,
+			Phone:        testPhone,
+			OTP:          testOTP,
+			VehicleLabel: bookingVehicle,
+		}
 		if f.receipt == "stale_cart" {
-			page = strings.Replace(page, emptyBookingCart, singleBookingCart, 1)
+			data.CartQuantity = 1
 		}
 		if f.receipt == "vehicle_missing" {
-			// Change the visible saved choice's ARIA label and text while leaving
-			// the matching label in the independent hidden make picker as a decoy.
-			page = strings.Replace(page, bookingVehicle, "Another saved vehicle", 2)
+			// The independent hidden make picker retains its matching decoy.
+			data.VehicleLabel = "Another saved vehicle"
 		}
-		// Post-authentication DOM, headers, cookies and bodies intentionally
-		// retain synthetic secrets. Diagnostics must never capture any of them.
-		page = strings.Replace(page, "</body>", `<input type="hidden" value="`+testPhone+`"><input type="hidden" value="`+testOTP+`"><p id="private-details">Phone `+testPhone+` OTP `+testOTP+`</p>
-<script>
-fetch('/synthetic/diagnostic-secrets', {method:'POST', headers:{Authorization:'Bearer `+bookingBearerToken+`'}, body:'`+testPhone+` `+testOTP+`'})
-  .then(response => response.text()).then(body => {
-    document.getElementById('private-details').textContent = body;
-    return fetch('/synthetic/diagnostic-ack', {method:'POST'});
-  });
-</script></body>`, 1)
-		writeHTML(response, page)
+		writeYodelPage(response, "booking-pass.html", data)
 	case request.Method == http.MethodPost && request.URL.Path == "/synthetic/diagnostic-secrets":
 		f.secretRequests++
 		cookie, err := request.Cookie("synthetic_session")
@@ -494,28 +488,14 @@ fetch('/synthetic/diagnostic-secrets', {method:'POST', headers:{Authorization:'B
 		if request.Form.Get("target_date") != bookingTargetDate || request.Form.Get("vehicle") != bookingVehicle || request.Form.Get("pass") != "all_day" {
 			f.errors = append(f.errors, "cart did not retain selected date, vehicle, and pass")
 		}
-		cart := singleBookingCart
+		quantity := 1
 		if f.receipt == "extra_cart" {
-			cart = strings.ReplaceAll(cart, `value="1"`, `value="2"`)
+			quantity = 2
 		}
-		writeHTML(response, `<html><body>`+cart+`<form method="post" action="/checkout"><button id="checkOutButton" type="submit">Checkout</button></form></body></html>`)
+		writeYodelPage(response, "cart-page.html", yodelFixtureData{CartQuantity: quantity})
 	case request.Method == http.MethodPost && request.URL.Path == "/checkout":
 		f.checkouts++
-		writeHTML(response, `<html><body>`+singleBookingCart+`
-<div id="orderConfirmModel"><button onclick="submitOrder()">Yes</button></div>
-<div id="orderConfirmModal" style="display:none"><h2 class="heading">Confirmed</h2><a href="/wallet">See My Pass</a></div>
-<div id="orderErrorModal" style="display:none">Sorry, sold out. Booking failed.</div>
-<script>
-async function submitOrder() {
-  const result = await fetch('/api/orders/checkout', {method: 'POST'});
-  const order = await result.json();
-  document.getElementById('orderConfirmModel').style.display = 'none';
-  setTimeout(() => {
-    const id = order.payment.succeeded ? 'orderConfirmModal' : 'orderErrorModal';
-    document.getElementById(id).style.display = 'block';
-  }, 250);
-}
-</script></body></html>`)
+		writeYodelPage(response, "checkout.html", yodelFixtureData{CartQuantity: 1})
 	case request.Method == http.MethodPost && request.URL.Path == "/api/orders/checkout":
 		f.confirmations++
 		if f.confirmationBarrier == nil || !f.confirmationBarrier.Load() {
@@ -540,92 +520,6 @@ async function submitOrder() {
 		http.NotFound(response, request)
 	}
 }
-
-const emptyBookingCart = `<div class="shoppingCard inactive"><div class="cartDigit"><div class="counter"><span class="count">0</span></div></div></div>`
-
-const singleBookingCart = `<div class="shoppingCard inactive"><div class="cartDigit"><div class="counter"><span class="count">1</span></div></div>
-<div class="shoppingMainList"><ul><li class="shoppingList singleItemList"><div class="CardListing"><div class="ClassificationInnerRow"><input class="count" value="1"></div></div></li></ul></div></div>`
-
-const bookingPassPage = `<!doctype html>
-<html>
-  <body>` + emptyBookingCart + `
-    <script>
-      function recordSelection(path) {
-        const request = new XMLHttpRequest();
-        request.open("POST", path, false);
-        request.send();
-      }
-      function chooseVehicle(choice) {
-        const popup = choice.closest('.popup');
-        for (const item of popup.querySelectorAll('[role="radio"]')) {
-          item.setAttribute('aria-checked', String(item === choice));
-          item.querySelector('input[type="radio"]').checked = item === choice;
-        }
-        const save = document.getElementById(popup.id + '-save-btn');
-        save.setAttribute('aria-disabled', 'false');
-        save.classList.remove('disabled', 'btn-disbled');
-      }
-      function saveVehicle(save) {
-        if (save.getAttribute('aria-disabled') === 'true') return false;
-        const popup = save.closest('.popup');
-        const selected = popup.querySelector('[role="radio"][aria-checked="true"]');
-        if (!selected || !selected.querySelector('input[type="radio"]').checked) return false;
-        const label = selected.getAttribute('aria-label');
-        const trigger = document.getElementById(popup.id.replace('vehicleSmartSelect_', 'vehicleSelectTrigger_'));
-        trigger.textContent = label;
-        trigger.classList.add('selectedProfileValue');
-        trigger.setAttribute('aria-label', 'VEHICLE INFO mandatory, ' + label + ' selected');
-        document.getElementById('vehicle').value = label;
-        popup.style.display = 'none';
-        recordSelection('/synthetic/vehicle-selected');
-        return false;
-      }
-    </script>
-    <div class="card ImageCard">
-      <h2>All-day pass</h2>
-      <div class="dateMain">
-        <div class="dateHeader"><span class="month">January-2030</span></div>
-        <div class="datelist">
-          <button class="date active" type="button" aria-label="Saturday 05">05</button>
-          <button class="date" type="button" aria-label="Sunday 06"
-            onclick="this.previousElementSibling.classList.remove('active'); this.classList.add('active'); document.getElementById('target-date').value='2030-01-06'; recordSelection('/synthetic/date-selected')">06</button>
-        </div>
-      </div>
-      <!-- Match the September 2026 Yodel widget, including the misleading heading,
-           hidden choices, explicit Save, and the selected value on the pass card. -->
-      <div class="listing shadowSpace row">
-        <span class="cartLabel" aria-label="2. Select a Vehicle / Boat Trailer Info mandatory" tabindex="-1"><span aria-hidden="true">2. Select a Vehicle / Boat Trailer Info*</span></span>
-        <div class="profileCol selectCustomSearch spacingAround col-100">
-          <span class="profileLabel item-label" aria-label="VEHICLE INFO mandatory" tabindex="-1"><span aria-hidden="true">VEHICLE INFO*</span></span>
-          <a id="vehicleSelectTrigger_101_101_Vehicle_1" class="themeBtn largeBtn themeBtnYellow selectModalMake button button-round" href="#" type="text" aria-label="Select VEHICLE INFO mandatory"
-            onclick="document.getElementById('vehicleSmartSelect_101_101_Vehicle_1').style.display='block'; return false">Select...</a>
-          <div id="vehicleSmartSelect_101_101_Vehicle_1" class="themeModel commanModal selectStateModal popup" style="display:none">
-            <div class="main-yselectModal"><div class="yselectModal">
-              <div class="cardHeader"><h2 class="heading" tabindex="0">Select Vehicle for this Pass</h2></div>
-              <div class="card-body">
-                <ul role="radiogroup" aria-label="Select Vehicle for this Pass">
-                  <li tabindex="0" role="radio" aria-checked="false" aria-label="Synthetic vehicle" onclick="chooseVehicle(this)">
-                    <label>Synthetic vehicle<input type="radio" tabindex="-1" aria-hidden="true" name="select-vehicleSmartSelect_101_101_Vehicle_1" value="SYNTHETIC__BC"><span></span></label>
-                  </li>
-                </ul>
-              </div>
-              <div class="cardfooter"><a id="vehicleSmartSelect_101_101_Vehicle_1-save-btn" class="themeBtn btn-disbled button disabled" href="#" type="text" aria-disabled="true" onclick="return saveVehicle(this)">Save</a></div>
-            </div></div>
-          </div>
-        </div>
-      </div>
-      <form method="post" action="/cart">
-        <input id="target-date" type="hidden" name="target_date">
-        <input id="vehicle" type="hidden" name="vehicle">
-        <input type="hidden" name="pass" value="all_day">
-        <a href="#" onclick="this.closest('form').requestSubmit(); return false">Add To Cart</a>
-      </form>
-    </div>
-    <div id="addVehicleSelectMakeModel" class="themeModel commanModal selectStateModal popup" style="display:none">
-      <ul role="radiogroup" aria-label="Select Make "><li tabindex="0" role="radio" aria-checked="false" aria-label="Synthetic vehicle"><label>Synthetic vehicle</label></li></ul>
-    </div>
-  </body>
-</html>`
 
 func assertCheckoutCounts(t *testing.T, snapshot bookingFlowSnapshot, confirmations int) {
 	t.Helper()

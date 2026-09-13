@@ -3,6 +3,7 @@ package model
 import (
 	"math"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jaysqvl/lake-pass-bot/internal/destinations"
@@ -52,12 +53,23 @@ func TestLakeSettingsValidationMatchesBookingBounds(t *testing.T) {
 		"empty order":      func(s *LakeSettings) { s.PreferredPasses = nil },
 		"duplicate passes": func(s *LakeSettings) { s.PreferredPasses = []PassType{PassAllDay, PassAllDay} },
 		"unsupported pass": func(s *LakeSettings) { s.PreferredPasses = []PassType{"camping"} },
+		"long vehicle":     func(s *LakeSettings) { s.VehicleKeyword = strings.Repeat("v", MaxDefaultVehicleBytes+1) },
+		"missing URL":      func(s *LakeSettings) { s.AllDayPassURL = "" },
+		"URL credentials":  func(s *LakeSettings) { s.AllDayPassURL = "https://user:password@example.test/pass" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			settings := DefaultLakeSettings(lake)
+			settings.VehicleKeyword = "Sample vehicle"
 			change(&settings)
-			if err := settings.Validate(); err == nil {
+			settingsErr := settings.Validate()
+			if settingsErr == nil {
 				t.Fatal("invalid lake settings were accepted")
+			}
+			request := settings.ApplyTo(DefaultAccountSettings().ApplyToBooking(BookingRequest{
+				Name: "Visit", ProfileID: 1, TargetDate: "2030-06-20", ConfirmationMode: RunModeManual,
+			}))
+			if err := request.Validate(); err == nil || err.Error() != settingsErr.Error() {
+				t.Fatalf("lake preferences have different booking validation: settings=%v booking=%v", settingsErr, err)
 			}
 		})
 	}
@@ -65,6 +77,12 @@ func TestLakeSettingsValidationMatchesBookingBounds(t *testing.T) {
 	settings.ReleaseDaysBefore = 0
 	if err := settings.ValidateForOrigins([]string{"https://yodelportal.com"}); err != nil {
 		t.Fatalf("valid same-day defaults: %v", err)
+	}
+	request := settings.ApplyTo(DefaultAccountSettings().ApplyToBooking(BookingRequest{
+		Name: "Visit", ProfileID: 1, TargetDate: "2030-06-20", ConfirmationMode: RunModeManual,
+	}))
+	if err := request.Validate(); err == nil || err.Error() != "vehicle is required" {
+		t.Fatalf("booking must still require a vehicle even though lake defaults do not: %v", err)
 	}
 	settings.AllDayPassURL = "https://unapproved.example/pass"
 	if err := settings.ValidateForOrigins([]string{"https://yodelportal.com"}); err == nil {

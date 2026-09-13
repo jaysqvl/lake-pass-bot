@@ -319,25 +319,6 @@ func mapWriteError(err error) error {
 	return err
 }
 
-func (s *Store) classifyGuardedUpdate(ctx context.Context, table string, id int64, result sql.Result) error {
-	count, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("read affected row count: %w", err)
-	}
-	if count > 0 {
-		return nil
-	}
-	var exists int
-	// table is always a package-owned constant at the call sites below.
-	if err := s.db.QueryRowContext(ctx, fmt.Sprintf("SELECT count(*) FROM %s WHERE id = ?", table), id).Scan(&exists); err != nil {
-		return fmt.Errorf("classify guarded update: %w", err)
-	}
-	if exists == 0 {
-		return ErrNotFound
-	}
-	return fmt.Errorf("%w: record has a queued or active job", ErrConflict)
-}
-
 func (s *Store) classifyOwnedGuardedUpdate(
 	ctx context.Context,
 	table string,

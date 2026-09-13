@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jaysqvl/lake-pass-bot/internal/actionproc"
@@ -16,7 +15,7 @@ import (
 	"github.com/jaysqvl/lake-pass-bot/internal/otp"
 )
 
-var standaloneCode = regexp.MustCompile(`(^|[^0-9])[0-9]{4,8}([^0-9]|$)`)
+var digitRun = regexp.MustCompile(`[0-9]+`)
 
 // ActionProcess is the small portion of an isolated process used by the
 // coordinator. Keeping the interface here makes protocol behavior testable
@@ -77,6 +76,28 @@ type asyncResult struct {
 	err         error
 }
 
+// runState belongs to one coordinator loop. Provider and approval goroutines
+// return values through async; only the loop mutates challenges and completion.
+type runState struct {
+	input                 RunInput
+	process               ActionProcess
+	jobKey                string
+	async                 chan asyncResult
+	challenges            map[string]*pendingChallenge
+	confirmationStarted   bool
+	confirmationCompleted bool
+	confirmationID        string
+	terminal              *RunResult
+}
+
+func (r *runState) cancelChallenges() {
+	for _, challenge := range r.challenges {
+		if challenge.cancel != nil {
+			challenge.cancel()
+		}
+	}
+}
+
 // Run drives the Python protocol until both a terminal frame and process exit.
 // A crash after confirmation.starting is outcome_unknown unless a matching
 // verified completion was received before cleanup ended.
@@ -105,34 +126,23 @@ func Run(ctx context.Context, input RunInput) (result RunResult, runErr error) {
 	defer input.Hub.ClearOTP(jobKey)
 
 	events := input.eventSink()
-	async := make(chan asyncResult, 8)
-	challenges := make(map[string]*pendingChallenge)
-	var challengeMu sync.Mutex
-	cancelChallenges := func() {
-		challengeMu.Lock()
-		defer challengeMu.Unlock()
-		for _, challenge := range challenges {
-			if challenge.cancel != nil {
-				challenge.cancel()
-			}
-		}
+	state := &runState{
+		input: input, process: process, jobKey: jobKey,
+		async:      make(chan asyncResult, 8),
+		challenges: make(map[string]*pendingChallenge),
 	}
-	defer cancelChallenges()
+	defer state.cancelChallenges()
 
 	ready := false
-	confirmationStarted := false
-	confirmationCompleted := false
-	confirmationID := ""
 	defer func() {
 		// The matching completion event is emitted only after the action verifies
 		// the reservation. A later cleanup timeout cannot undo that observation.
-		if confirmationCompleted && result.Status != model.JobSucceeded {
+		if state.confirmationCompleted && result.Status != model.JobSucceeded {
 			result.Status = model.JobSucceeded
 			result.Message = "Yodel confirmed the reservation; browser cleanup ended before a final result."
 			runErr = nil
 		}
 	}()
-	var terminal *RunResult
 	eventStream := process.Events()
 	doneStream := process.Done()
 	ctxDone := ctx.Done()
@@ -147,7 +157,7 @@ func Run(ctx context.Context, input RunInput) (result RunResult, runErr error) {
 			if !ok {
 				eventStream = nil
 				if processResult != nil {
-					return finishRun(ctx, terminal, confirmationStarted, *processResult)
+					return finishRun(ctx, state.terminal, state.confirmationStarted, *processResult)
 				}
 				continue
 			}
@@ -171,16 +181,14 @@ func Run(ctx context.Context, input RunInput) (result RunResult, runErr error) {
 				}
 				continue
 			}
-			if err := handleFrame(ctx, input, process, jobKey, frame, challenges, &challengeMu, async, &confirmationStarted, &confirmationCompleted, &confirmationID, &terminal); err != nil {
+			if err := state.handleFrame(ctx, frame); err != nil {
 				process.Cancel(input.CancelGrace)
 				return RunResult{}, err
 			}
-		case result := <-async:
+		case result := <-state.async:
 			switch result.kind {
 			case "otp":
-				challengeMu.Lock()
-				_, stillActive := challenges[result.correlation]
-				challengeMu.Unlock()
+				_, stillActive := state.challenges[result.correlation]
 				if !stillActive {
 					continue
 				}
@@ -235,10 +243,10 @@ func Run(ctx context.Context, input RunInput) (result RunResult, runErr error) {
 				input.diagnostic("process.exit", result.Err)
 			}
 			doneStream = nil
-			cancelChallenges()
+			state.cancelChallenges()
 			input.Hub.ClearOTP(jobKey)
 			if eventStream == nil {
-				return finishRun(ctx, terminal, confirmationStarted, result)
+				return finishRun(ctx, state.terminal, state.confirmationStarted, result)
 			}
 		}
 	}
@@ -275,20 +283,10 @@ func (input RunInput) diagnostic(operation string, err error) {
 	}
 }
 
-func handleFrame(
-	ctx context.Context,
-	input RunInput,
-	process ActionProcess,
-	jobKey string,
-	frame actionproc.Frame,
-	challenges map[string]*pendingChallenge,
-	challengeMu *sync.Mutex,
-	async chan<- asyncResult,
-	confirmationStarted *bool,
-	confirmationCompleted *bool,
-	confirmationID *string,
-	terminal **RunResult,
-) error {
+func (r *runState) handleFrame(ctx context.Context, frame actionproc.Frame) error {
+	input := r.input
+	process := r.process
+	jobKey := r.jobKey
 	events := input.eventSink()
 	switch frame.Type {
 	case "run.status":
@@ -312,9 +310,7 @@ func handleFrame(
 		if err != nil {
 			return err
 		}
-		challengeMu.Lock()
-		_, exists := challenges[challengeID]
-		challengeMu.Unlock()
+		_, exists := r.challenges[challengeID]
 		if exists {
 			return errors.New("duplicate OTP challenge identifier")
 		}
@@ -325,9 +321,7 @@ func handleFrame(
 			events("otp.arm_failed", "OTP provider could not be armed.")
 			return nil
 		}
-		challengeMu.Lock()
-		challenges[challengeID] = &pendingChallenge{armed: armed}
-		challengeMu.Unlock()
+		r.challenges[challengeID] = &pendingChallenge{armed: armed}
 		events("otp.armed", "OTP inbox cursor was captured before the login action.")
 		return process.Send("otp.ready", map[string]any{"challenge_id": challengeID})
 	case "otp.triggered":
@@ -335,20 +329,17 @@ func handleFrame(
 		if err != nil {
 			return err
 		}
-		challengeMu.Lock()
-		challenge, ok := challenges[challengeID]
+		challenge, ok := r.challenges[challengeID]
 		if !ok || challenge.cancel != nil {
-			challengeMu.Unlock()
 			return errors.New("OTP was triggered without a unique armed challenge")
 		}
 		waitCtx, cancel := context.WithTimeout(ctx, input.OTPTimeout)
 		challenge.cancel = cancel
 		armed := challenge.armed
-		challengeMu.Unlock()
 		go func() {
 			message, waitErr := input.Provider.WaitForCode(waitCtx, armed)
 			select {
-			case async <- asyncResult{kind: "otp", correlation: challengeID, message: message, err: waitErr}:
+			case r.async <- asyncResult{kind: "otp", correlation: challengeID, message: message, err: waitErr}:
 			case <-ctx.Done():
 			}
 		}()
@@ -358,12 +349,10 @@ func handleFrame(
 			return err
 		}
 		input.Hub.ClearOTP(jobKey)
-		challengeMu.Lock()
-		if challenge, ok := challenges[challengeID]; ok && challenge.cancel != nil {
+		if challenge, ok := r.challenges[challengeID]; ok && challenge.cancel != nil {
 			challenge.cancel()
 		}
-		delete(challenges, challengeID)
-		challengeMu.Unlock()
+		delete(r.challenges, challengeID)
 		events(frame.Type, "OTP challenge ended and transient code state was cleared.")
 	case "approval.request":
 		if input.Command != model.CommandBook || input.Mode != model.RunModeManual {
@@ -393,7 +382,7 @@ func handleFrame(
 		go func() {
 			decision, waitErr := input.Hub.WaitDecision(ctx, jobKey)
 			select {
-			case async <- asyncResult{kind: "approval", correlation: approvalID, decision: decision, err: waitErr}:
+			case r.async <- asyncResult{kind: "approval", correlation: approvalID, decision: decision, err: waitErr}:
 			case <-ctx.Done():
 			}
 		}()
@@ -405,7 +394,7 @@ func handleFrame(
 		if err != nil {
 			return err
 		}
-		if *confirmationStarted {
+		if r.confirmationStarted {
 			return errors.New("final confirmation was already armed")
 		}
 		if input.Hooks.ConfirmationStarting != nil {
@@ -417,22 +406,22 @@ func handleFrame(
 		// Once this flag is set, both the durable store and in-memory crash
 		// classification conservatively treat any later failure as ambiguous.
 		// Python cannot click until it receives the acknowledgement below.
-		*confirmationStarted = true
-		*confirmationID = startedID
+		r.confirmationStarted = true
+		r.confirmationID = startedID
 		events("confirmation.starting", "Final confirmation is starting; a crash from this point may leave an unknown outcome.")
 		return process.Send("confirmation.ready", map[string]any{"confirmation_id": startedID})
 	case "confirmation.completed":
-		if !*confirmationStarted {
+		if !r.confirmationStarted {
 			return errors.New("final confirmation completed without a durable start marker")
 		}
 		completedID, err := correlation(frame.Payload, "confirmation_id")
 		if err != nil {
 			return err
 		}
-		if completedID != *confirmationID {
+		if completedID != r.confirmationID {
 			return errors.New("final confirmation completion identifier did not match its durable start marker")
 		}
-		*confirmationCompleted = true
+		r.confirmationCompleted = true
 		events("confirmation.completed", "Yodel reported that final confirmation completed.")
 	case "run.complete":
 		status, err := terminalStatus(stringValue(frame.Payload, "status"))
@@ -440,7 +429,7 @@ func handleFrame(
 			return err
 		}
 		message := sanitizeMessage(stringValue(frame.Payload, "message"), input.Credentials)
-		*terminal = &RunResult{Status: status, Message: message}
+		r.terminal = &RunResult{Status: status, Message: message}
 	default:
 		return fmt.Errorf("unsupported action event %q", frame.Type)
 	}
@@ -484,7 +473,14 @@ func sanitizeMessage(message string, credentials model.ProfileCredentials) strin
 			message = strings.ReplaceAll(message, secret, "[redacted]")
 		}
 	}
-	message = standaloneCode.ReplaceAllString(message, "$1[redacted-code]$2")
+	// Match complete digit runs without consuming the separators between them.
+	// Otherwise adjacent codes can share a delimiter and skip redaction.
+	message = digitRun.ReplaceAllStringFunc(message, func(digits string) string {
+		if len(digits) >= 4 && len(digits) <= 8 {
+			return "[redacted-code]"
+		}
+		return digits
+	})
 	message = strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\r' || r == '\t' {
 			return ' '

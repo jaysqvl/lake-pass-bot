@@ -302,12 +302,12 @@ func (f *e2eFlow) serveYodel(response http.ResponseWriter, request *http.Request
 	switch {
 	case request.Method == http.MethodGet && request.URL.Path == "/buntzen-lake":
 		if cookie, err := request.Cookie("synthetic-session"); err == nil && cookie.Value == "authenticated" {
-			writeHTML(response, `<html><body><script>localStorage.setItem("BearerToken", "eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDI0NDQ4MDB9.")</script><a href="/account">My Account</a></body></html>`)
+			writeYodelPage(response, "authenticated.html", yodelFixtureData{BearerToken: bookingBearerToken})
 			return
 		}
-		writeHTML(response, `<html><body><div class="popup"><a class="popup-close" href="#passes" onclick="this.parentElement.remove(); return false">Go To Pass(es)</a></div><a aria-label="Sign in / Register" href="/buntzen-lake/login">Profile</a></body></html>`)
+		writeYodelPage(response, "landing.html", yodelFixtureData{})
 	case request.Method == http.MethodGet && request.URL.Path == "/buntzen-lake/login":
-		writeHTML(response, `<html><body><form method="post" action="/buntzen-lake/login"><input id="txtPhonenumber" name="number" inputmode="numeric" maxlength="10" aria-label="Mobile phone number mandatory"><a href="#" onclick="this.closest('form').requestSubmit(); return false">Next</a></form></body></html>`)
+		writeYodelPage(response, "login.html", yodelFixtureData{})
 	case request.Method == http.MethodPost && request.URL.Path == "/buntzen-lake/login":
 		if err := request.ParseForm(); err != nil {
 			f.recordError("parse fake Yodel login: %v", err)
@@ -317,7 +317,7 @@ func (f *e2eFlow) serveYodel(response http.ResponseWriter, request *http.Request
 		f.triggered = true
 		http.Redirect(response, request, "/buntzen-lake/otp", http.StatusSeeOther)
 	case request.Method == http.MethodGet && request.URL.Path == "/buntzen-lake/otp":
-		writeHTML(response, `<html><body><form method="post" action="/buntzen-lake/otp"><input class="otpFocusInput" type="tel" name="code" maxlength="1" aria-label="verification code"><input class="otpFocusInput" type="tel" name="code" maxlength="1" aria-label="Digit 2"><input class="otpFocusInput" type="tel" name="code" maxlength="1" aria-label="Digit 3"><input class="otpFocusInput" type="tel" name="code" maxlength="1" aria-label="Digit 4"><input class="otpFocusInput" type="tel" name="code" maxlength="1" aria-label="Digit 5"><input class="otpFocusInput" type="tel" name="code" maxlength="1" aria-label="Digit 6"><a href="#" onclick="this.closest('form').requestSubmit(); return false">Verify</a></form></body></html>`)
+		writeYodelPage(response, "otp.html", yodelFixtureData{})
 	case request.Method == http.MethodPost && request.URL.Path == "/buntzen-lake/otp":
 		if err := request.ParseForm(); err != nil {
 			f.recordError("parse fake Yodel OTP: %v", err)

@@ -37,6 +37,27 @@ func run(ctx context.Context, args []string) error {
 			"revision": buildinfo.Revision,
 		})
 	}
+	// Reject malformed commands before opening appdata, creating a key, or
+	// applying migrations. Parsing a command must not modify an installation.
+	var job jobCommand
+	var err error
+	switch args[0] {
+	case "serve", "doctor", "migrate":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: lake-pass-bot %s", args[0])
+		}
+	case "admin-password":
+		if len(args) != 2 || args[1] != "reset" {
+			return errors.New("usage: lake-pass-bot admin-password reset")
+		}
+	case "auth-check", "dry-run", "book":
+		job, err = parseJobCommand(args[0], args[1:])
+		if err != nil {
+			return err
+		}
+	default:
+		return usageError()
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -75,18 +96,15 @@ func run(ctx context.Context, args []string) error {
 	case "serve":
 		return runServe(ctx, cfg, database)
 	case "auth-check", "dry-run", "book":
-		return runJobCommand(ctx, cfg, database, args[0], args[1:])
+		return runJobCommand(ctx, cfg, database, job)
 	case "admin-password":
-		return adminPasswordCommand(ctx, cfg, database, args[1:])
+		return resetAdministratorPassword(ctx, database)
 	default:
 		return usageError()
 	}
 }
 
-func adminPasswordCommand(ctx context.Context, cfg config.Config, database *store.Store, args []string) error {
-	if len(args) != 1 || args[0] != "reset" {
-		return errors.New("usage: lake-pass-bot admin-password reset")
-	}
+func resetAdministratorPassword(ctx context.Context, database *store.Store) error {
 	password := config.Env("LAKE_PASS_ADMIN_PASSWORD")
 	if password == "" {
 		return errors.New("LAKE_PASS_ADMIN_PASSWORD must contain the new password")
@@ -100,5 +118,5 @@ func adminPasswordCommand(ctx context.Context, cfg config.Config, database *stor
 }
 
 func usageError() error {
-	return errors.New("usage: lake-pass-bot {serve|doctor|version|migrate|auth-check|dry-run|book|admin-password reset}; runtime commands require --booking 1")
+	return errors.New("usage: lake-pass-bot {serve|doctor|version|migrate|auth-check|dry-run|book|admin-password reset}; auth-check, dry-run, and book require --booking ID")
 }

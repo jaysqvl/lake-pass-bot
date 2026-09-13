@@ -5,6 +5,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from playwright.sync_api import Error as PlaywrightError
+
 from lake_pass_actions.providers.yodel.cart import (
     is_empty_cart, is_single_pass_cart, require_empty_cart, require_single_pass_cart,
 )
@@ -76,9 +78,16 @@ class CartTests(unittest.TestCase):
 
     def test_unreadable_cart_fails_closed(self):
         page = Mock()
-        page.evaluate.side_effect = RuntimeError("page detached")
+        page.evaluate.side_effect = PlaywrightError("page detached")
         control = SimpleNamespace(inbox=SimpleNamespace(check_cancelled=Mock()))
         with self.assertRaisesRegex(ActionError, "review the cart"):
+            require_single_pass_cart(page, control)
+
+    def test_programming_error_is_not_reported_as_an_unreadable_cart(self):
+        page = Mock()
+        page.evaluate.side_effect = TypeError("invalid snapshot implementation")
+        control = SimpleNamespace(inbox=SimpleNamespace(check_cancelled=Mock()))
+        with self.assertRaisesRegex(TypeError, "invalid snapshot implementation"):
             require_single_pass_cart(page, control)
 
     def test_existing_cart_is_not_cleared_or_submitted(self):

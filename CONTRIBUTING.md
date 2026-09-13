@@ -89,7 +89,8 @@ For Python changes:
 
 ```bash
 uv sync --project actions --locked
-uvx --from ruff==0.12.10 ruff check actions scripts/release integration/*.py
+uvx --from ruff==0.12.10 ruff check actions scripts/check_build_backend.py \
+  scripts/check_release_config.py scripts/docker_*_smoke.py scripts/release integration/*.py
 uv run --project actions --locked python -m unittest discover -s actions/tests
 ```
 
@@ -101,7 +102,9 @@ node --test internal/web/testdata/client.test.cjs
 
 Run [browser integration](integration/README.md) for browser or cross-process
 changes. For release changes, run
-`python3 -m unittest discover -s scripts/release/tests`; CI also validates the
+`uv run --project actions --locked python -m unittest discover -s scripts/release/tests`.
+Tooling that reads TOML requires Python 3.11 or newer; the managed worker
+environment provides Python 3.12. CI also validates the
 Portainer template with both the default `latest` image and an explicit digest.
 CI additionally checks release metadata, public-tree privacy, dependencies, and
 the built container. A passing synthetic test is not proof of a completed live

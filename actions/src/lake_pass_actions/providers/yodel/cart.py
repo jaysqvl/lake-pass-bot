@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Callable
+
+from playwright.sync_api import Error as PlaywrightError
 
 from ...errors import ActionError
 
@@ -69,15 +71,16 @@ def is_empty_cart(snapshot: Any) -> bool:
     )
 
 
-def _require_cart(page: Any, control: Any, predicate: Any, message: str) -> None:
-
+def _require_cart(
+    page: Any, control: Any, predicate: Callable[[Any], bool], message: str
+) -> None:
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
         control.inbox.check_cancelled()
         try:
             if predicate(page.evaluate(_CART_SNAPSHOT)):
                 return
-        except Exception:
+        except PlaywrightError:
             # A detached or changing page is not evidence of a safe cart.
             break
         page.wait_for_timeout(100)

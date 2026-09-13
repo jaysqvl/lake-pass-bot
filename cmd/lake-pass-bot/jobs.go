@@ -22,32 +22,46 @@ import (
 	"github.com/jaysqvl/lake-pass-bot/internal/store"
 )
 
-func runJobCommand(parent context.Context, cfg config.Config, database *store.Store, commandName string, args []string) error {
+type jobCommand struct {
+	command   model.JobCommand
+	bookingID int64
+	mode      model.RunMode
+}
+
+func parseJobCommand(commandName string, args []string) (jobCommand, error) {
 	flags := flag.NewFlagSet(commandName, flag.ContinueOnError)
 	bookingID := flags.Int64("booking", 0, "booking request ID")
 	mode := flags.String("mode", "", "manual or auto override for book")
 	if err := flags.Parse(args); err != nil {
-		return err
+		return jobCommand{}, err
+	}
+	if flags.NArg() != 0 {
+		return jobCommand{}, errors.New(commandName + " does not accept positional arguments")
 	}
 	if *bookingID <= 0 {
-		return errors.New(commandName + " requires --booking ID")
+		return jobCommand{}, errors.New(commandName + " requires --booking ID")
 	}
 	command := model.JobCommand(commandName)
 	runMode := model.RunMode("")
 	requestedMode := strings.TrimSpace(*mode)
 	if command == model.CommandDryRun {
 		if requestedMode != "" {
-			return errors.New("--mode is only valid for book")
+			return jobCommand{}, errors.New("--mode is only valid for book")
 		}
 		runMode = model.RunModeDryRun
 	} else if command == model.CommandBook && requestedMode != "" {
 		runMode = model.RunMode(requestedMode)
 		if runMode != model.RunModeManual && runMode != model.RunModeAuto {
-			return errors.New("book --mode must be manual or auto")
+			return jobCommand{}, errors.New("book --mode must be manual or auto")
 		}
 	} else if command != model.CommandBook && requestedMode != "" {
-		return errors.New("--mode is only valid for book")
+		return jobCommand{}, errors.New("--mode is only valid for book")
 	}
+	return jobCommand{command: command, bookingID: *bookingID, mode: runMode}, nil
+}
+
+func runJobCommand(parent context.Context, cfg config.Config, database *store.Store, options jobCommand) error {
+	command, bookingID, runMode := options.command, options.bookingID, options.mode
 	instanceLock, lockErr := lockfile.TryAcquire(cfg.AppDataDir + "/control-plane.lock")
 	ownsControlPlane := lockErr == nil
 	if lockErr != nil && !errors.Is(lockErr, lockfile.ErrLocked) {
@@ -59,7 +73,7 @@ func runJobCommand(parent context.Context, cfg config.Config, database *store.St
 	if ownsControlPlane {
 		defer instanceLock.Close()
 		if command == model.CommandBook && runMode != model.RunModeAuto {
-			booking, err := database.SystemGetBookingRequest(parent, *bookingID)
+			booking, err := database.SystemGetBookingRequest(parent, bookingID)
 			if err != nil {
 				return err
 			}
@@ -81,7 +95,7 @@ func runJobCommand(parent context.Context, cfg config.Config, database *store.St
 		jobEngine.Start(ctx)
 		defer jobEngine.Stop()
 	}
-	job, err := jobEngine.SystemQueueBooking(ctx, *bookingID, command, runMode)
+	job, err := jobEngine.SystemQueueBooking(ctx, bookingID, command, runMode)
 	if err != nil {
 		return err
 	}

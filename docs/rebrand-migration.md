@@ -20,7 +20,7 @@ Compatibility is intentional:
 | --- | --- |
 | App name and CLI | `Lake Pass Bot` and `lake-pass-bot`; the new Docker image includes a `buntzen` executable alias for existing operator commands. |
 | Runtime environment | `LAKE_PASS_*` names are canonical. If a canonical name is unset, its matching `BUNTZEN_*` name remains accepted. An explicitly set canonical value, including an empty value, takes precedence. Existing unprefixed settings such as `APPDATA_DIR` and `SCHEDULES_ENABLED` retain their names. |
-| Compose environment | Optional settings retain legacy fallbacks. The current Portainer template requires four canonical variables listed below. The native Compose port also accepts existing `WEB_PORT`. The service/container name becomes `lake-pass-bot`. |
+| Compose environment | Optional settings retain legacy fallbacks. The current Portainer template requires three canonical variables listed below. The native Compose port also accepts existing `WEB_PORT`. The service/container name becomes `lake-pass-bot`. |
 | Database | New installs create `lake-pass-bot.db`. An existing `buntzen.db` is reused in place. Startup rejects ambiguous directories containing both database names. Keep the data directory together; do not create or rename a second database during the upgrade. |
 | Encryption and browser state | The existing key and profile marker formats are retained. The read-only key mount stays at `/run/buntzen-key` so explicit existing master-key paths continue to resolve. |
 | Bookings | The migration records the original lake on existing requests. Saved URLs, release timing, credentials, and duplicate-attempt safeguards are retained. |
