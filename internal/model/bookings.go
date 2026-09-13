@@ -2,7 +2,6 @@ package model
 
 import (
 	"errors"
-	"math"
 	"net/url"
 	"slices"
 	"strings"
@@ -89,10 +88,6 @@ func (r BookingRequest) PassOrder() []PassType {
 
 func (r BookingRequest) Validate() error {
 	var problems []string
-	lake, lakeErr := destinations.Resolve(r.LakeID)
-	if lakeErr != nil {
-		problems = append(problems, lakeErr.Error())
-	}
 	if strings.TrimSpace(r.Name) == "" {
 		problems = append(problems, "name is required")
 	} else if len(r.Name) > MaxResourceNameBytes {
@@ -103,51 +98,14 @@ func (r BookingRequest) Validate() error {
 	}
 	if strings.TrimSpace(r.VehicleKeyword) == "" {
 		problems = append(problems, "vehicle is required")
-	} else if len(r.VehicleKeyword) > MaxDefaultVehicleBytes {
-		problems = append(problems, "vehicle is too long")
 	}
 	if _, err := time.Parse(time.DateOnly, r.TargetDate); err != nil {
 		problems = append(problems, "target date must use YYYY-MM-DD")
 	}
-	if len(r.Timezone) > MaxTimezoneBytes {
-		problems = append(problems, "timezone is too long")
-	} else if _, err := time.LoadLocation(r.Timezone); err != nil {
-		problems = append(problems, "timezone is invalid")
-	}
-	if _, err := time.Parse("15:04", r.ReleaseTime); err != nil {
-		problems = append(problems, "release time must use HH:MM")
-	}
-	if days := r.EffectiveReleaseDaysBefore(); days < 0 || days > MaxReleaseDaysBefore {
-		problems = append(problems, "release days before visit must be between 0 and 365")
-	}
+	problems = append(problems, r.lakeSettings().validationProblems()...)
 	problems = append(problems, r.preparationProblems()...)
 	if !r.ConfirmationMode.Valid() || r.ConfirmationMode == RunModeDryRun {
 		problems = append(problems, "confirmation mode must be manual or auto")
-	}
-	passes := r.PassOrder()
-	if len(passes) == 0 {
-		problems = append(problems, "at least one pass preference is required")
-	} else if len(passes) > 3 {
-		problems = append(problems, "at most three pass preferences are allowed")
-	}
-	seen := make(map[PassType]bool, len(passes))
-	for _, pass := range passes {
-		if lakeErr == nil && !slices.Contains(lake.SupportedPasses, string(pass)) {
-			problems = append(problems, "pass preference is not supported by the selected lake")
-		} else if seen[pass] {
-			problems = append(problems, "each pass preference can only be selected once")
-		}
-		seen[pass] = true
-	}
-	if seen[PassAllDay] {
-		if err := validateHTTPURL(r.AllDayPassURL, "all-day pass URL"); err != nil {
-			problems = append(problems, err.Error())
-		}
-	}
-	if seen[PassAfternoon] || seen[PassMorning] {
-		if err := validateHTTPURL(r.HalfDayPassURL, "half-day pass URL"); err != nil {
-			problems = append(problems, err.Error())
-		}
 	}
 	if len(problems) > 0 {
 		return errors.New(strings.Join(problems, "; "))
@@ -156,23 +114,22 @@ func (r BookingRequest) Validate() error {
 }
 
 func (r BookingRequest) preparationProblems() []string {
-	var problems []string
-	if r.PrepMinutesBefore < 0 || r.AuthDeadlineMinutesBefore < 0 {
-		problems = append(problems, "preparation offsets cannot be negative")
-	} else if r.PrepMinutesBefore > MaxPrepMinutesBefore {
-		problems = append(problems, "preparation window cannot exceed 180 minutes")
+	return (preparationTiming{
+		PrepMinutesBefore: r.PrepMinutesBefore, AuthDeadlineMinutesBefore: r.AuthDeadlineMinutesBefore,
+		PollDeadlineSeconds: r.PollDeadlineSeconds, PollMinSeconds: r.PollMinSeconds, PollMaxSeconds: r.PollMaxSeconds,
+	}).validationProblems()
+}
+
+// A request keeps a snapshot of its lake preferences. Validate those fields
+// using the same policy as saved defaults, without requiring another booking.
+func (r BookingRequest) lakeSettings() LakeSettings {
+	return LakeSettings{
+		LakeID: r.LakeID, VehicleKeyword: r.VehicleKeyword,
+		Timezone: r.Timezone, ReleaseTime: r.ReleaseTime,
+		ReleaseDaysBefore: r.EffectiveReleaseDaysBefore(),
+		AllDayPassURL:     r.AllDayPassURL, HalfDayPassURL: r.HalfDayPassURL,
+		PreferredPasses: r.PassOrder(),
 	}
-	if r.AuthDeadlineMinutesBefore > r.PrepMinutesBefore {
-		problems = append(problems, "auth deadline must fall within the preparation window")
-	}
-	if r.PollDeadlineSeconds <= 0 || r.PollDeadlineSeconds > 900 ||
-		r.PollMinSeconds < 0.05 || r.PollMinSeconds > 60 ||
-		r.PollMaxSeconds < r.PollMinSeconds || r.PollMaxSeconds > 60 ||
-		math.IsNaN(r.PollMinSeconds) || math.IsNaN(r.PollMaxSeconds) ||
-		math.IsInf(r.PollMinSeconds, 0) || math.IsInf(r.PollMaxSeconds, 0) {
-		problems = append(problems, "poll timing must fit the worker bounds")
-	}
-	return problems
 }
 
 // ValidateForOrigins applies the operator-controlled credential boundary on

@@ -4,14 +4,35 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/jaysqvl/lake-pass-bot/internal/config"
 	secretcrypto "github.com/jaysqvl/lake-pass-bot/internal/crypto"
 	"github.com/jaysqvl/lake-pass-bot/internal/store"
 )
+
+func TestUnknownCommandDoesNotInitializeAppdata(t *testing.T) {
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(name, "LAKE_PASS_") || strings.HasPrefix(name, "BUNTZEN_") {
+			t.Setenv(name, "")
+		}
+	}
+	directory := filepath.Join(t.TempDir(), "uninitialized")
+	t.Setenv("APPDATA_DIR", directory)
+	t.Setenv("MAX_CONCURRENT_JOBS", "1")
+	t.Setenv("SCHEDULES_ENABLED", "false")
+	t.Setenv("BLUEBUBBLES_URL", "http://bluebubbles.example:1234")
+	if err := run(context.Background(), []string{"typo"}); err == nil || err.Error() != usageError().Error() {
+		t.Fatalf("unknown command: %v", err)
+	}
+	if _, err := os.Stat(directory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unknown command initialized appdata: %v", err)
+	}
+}
 
 func TestAdminPasswordCommandRecoversSoleAdminAndRevokesSessions(t *testing.T) {
 	ctx := context.Background()
@@ -34,7 +55,7 @@ func TestAdminPasswordCommandRecoversSoleAdminAndRevokesSessions(t *testing.T) {
 	}
 
 	t.Setenv("LAKE_PASS_ADMIN_PASSWORD", "host recovered password")
-	if err := adminPasswordCommand(ctx, config.Config{}, database, []string{"reset"}); err != nil {
+	if err := resetAdministratorPassword(ctx, database); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok, err := database.AuthenticateUser(ctx, "renamed-owner", "host recovered password"); err != nil || !ok {
@@ -47,17 +68,32 @@ func TestAdminPasswordCommandRecoversSoleAdminAndRevokesSessions(t *testing.T) {
 
 func TestAdminPasswordCommandRequiresExplicitRecoverySecret(t *testing.T) {
 	t.Setenv("LAKE_PASS_ADMIN_PASSWORD", "")
-	err := adminPasswordCommand(context.Background(), config.Config{}, nil, []string{"reset"})
+	err := resetAdministratorPassword(context.Background(), nil)
 	if err == nil || err.Error() != "LAKE_PASS_ADMIN_PASSWORD must contain the new password" {
 		t.Fatalf("error = %v", err)
 	}
 }
 
-func TestBookCommandRejectsAnExplicitInvalidModeBeforeQueueing(t *testing.T) {
-	err := runJobCommand(context.Background(), config.Config{}, nil, "book", []string{
-		"--booking", "1", "--mode", "manul",
-	})
-	if err == nil || err.Error() != "book --mode must be manual or auto" {
-		t.Fatalf("invalid mode error = %v", err)
+func TestMalformedCommandsAreRejectedBeforeRuntimeSetup(t *testing.T) {
+	t.Setenv("MAX_CONCURRENT_JOBS", "invalid-runtime-setting")
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"serve", "extra"}, "usage: lake-pass-bot serve"},
+		{[]string{"doctor", "extra"}, "usage: lake-pass-bot doctor"},
+		{[]string{"migrate", "extra"}, "usage: lake-pass-bot migrate"},
+		{[]string{"admin-password"}, "usage: lake-pass-bot admin-password reset"},
+		{[]string{"admin-password", "reset", "extra"}, "usage: lake-pass-bot admin-password reset"},
+		{[]string{"book"}, "book requires --booking ID"},
+		{[]string{"book", "--booking", "1", "--mode", "manul"}, "book --mode must be manual or auto"},
+		{[]string{"book", "--booking", "1", "extra"}, "book does not accept positional arguments"},
+		{[]string{"dry-run", "--booking", "1", "--mode", "auto"}, "--mode is only valid for book"},
+	} {
+		t.Run(strings.Join(test.args, " "), func(t *testing.T) {
+			if err := run(context.Background(), test.args); err == nil || err.Error() != test.want {
+				t.Fatalf("command error = %v; want %q", err, test.want)
+			}
+		})
 	}
 }
