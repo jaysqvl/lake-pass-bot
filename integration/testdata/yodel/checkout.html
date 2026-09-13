@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <body>
+    {{template "booking-cart" .}}
+    <div id="orderConfirmModel"><button onclick="submitOrder()">Yes</button></div>
+    <div id="orderConfirmModal" style="display:none">
+      <h2 class="heading">Confirmed</h2>
+      <a href="/wallet">See My Pass</a>
+    </div>
+    <div id="orderErrorModal" style="display:none">Sorry, sold out. Booking failed.</div>
+    <script>
+      async function submitOrder() {
+        const result = await fetch('/api/orders/checkout', {method: 'POST'});
+        const order = await result.json();
+        document.getElementById('orderConfirmModel').style.display = 'none';
+        setTimeout(() => {
+          const id = order.payment.succeeded ? 'orderConfirmModal' : 'orderErrorModal';
+          document.getElementById(id).style.display = 'block';
+        }, 250);
+      }
+    </script>
+  </body>
+</html>

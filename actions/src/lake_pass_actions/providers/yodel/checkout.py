@@ -7,6 +7,8 @@ import time
 from typing import Any
 from urllib.parse import urlsplit
 
+from playwright.sync_api import Error as PlaywrightError
+
 from ...errors import ActionError
 
 
@@ -91,8 +93,19 @@ class CheckoutConfirmation:
                 self.response_valid = False
                 return
             body = response.body()
-            self.response_valid = len(body) <= MAX_RECEIPT_BYTES and successful_receipt(json.loads(body))
-        except Exception:
+            if len(body) > MAX_RECEIPT_BYTES:
+                self.response_valid = False
+                return
+            try:
+                receipt = json.loads(body)
+            except (ValueError, RecursionError):
+                # The decoder can reject integer length or nesting limits as
+                # well as invalid JSON/UTF-8. These are untrusted receipt bytes,
+                # not programming errors in the browser adapter.
+                self.response_valid = False
+                return
+            self.response_valid = successful_receipt(receipt)
+        except PlaywrightError:
             self.response_valid = False
         finally:
             self.response_seen = True

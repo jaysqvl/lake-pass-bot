@@ -20,6 +20,11 @@ checkout response/dialog structure, including sold-out responses, missing issued
 passes, and delayed response bodies. It verifies the manual decision barrier
 and that an already-authenticated booking never touches BlueBubbles.
 
+The fake provider's OTP and booking pages live in `testdata/yodel/` as readable
+HTML templates. The Go handlers select cart quantities, visible vehicle labels,
+and synthetic credentials through `yodelFixtureData`; scenario changes do not
+depend on replacing a particular occurrence of text inside the page.
+
 The separate offline Chromium calendar cases cover independent morning and
 afternoon calendars, missing dates, month mismatches, ambiguous metadata, delayed
 selection, and cancellation. These fixtures check known website contracts; they

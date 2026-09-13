@@ -65,18 +65,3 @@ func (s *Store) GetJobDecision(ctx context.Context, userID, jobID int64) (model.
 	decision.CreatedAt, err = parseTime(created)
 	return decision, err
 }
-
-func (s *Store) SystemGetJobDecision(ctx context.Context, jobID int64) (model.JobDecision, error) {
-	var decision model.JobDecision
-	var created string
-	if err := s.db.QueryRowContext(ctx,
-		"SELECT job_id, user_id, decision, created_at FROM job_decisions WHERE job_id = ?", jobID,
-	).Scan(&decision.JobID, &decision.UserID, &decision.Decision, &created); errors.Is(err, sql.ErrNoRows) {
-		return model.JobDecision{}, ErrNotFound
-	} else if err != nil {
-		return model.JobDecision{}, fmt.Errorf("read job decision: %w", err)
-	}
-	var err error
-	decision.CreatedAt, err = parseTime(created)
-	return decision, err
-}
