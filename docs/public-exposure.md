@@ -24,9 +24,9 @@ networks broader than IPv4 `/24` or IPv6 `/64`. These are connector addresses,
 not Cloudflare edge IP ranges; never trust an entire LAN or shared container
 network unless every host on it is authorized to supply visitor identity.
 
-Public mode requires the original public `Host` header, even when
-`LAKE_PASS_HOST_CHECK_ENABLED=false`. Leave Tunnel's optional
-`httpHostHeader` unset, or set it to the public hostname. The app accepts
+Public mode requires the original public `Host` header, even when private
+hostname checks are disabled in Settings > Network or by deployment override.
+Leave Tunnel's optional `httpHostHeader` unset, or set it to the public hostname. The app accepts
 `X-Forwarded-Proto: https` and a single `CF-Connecting-IP` only from a configured
 connector socket. Missing, duplicated, malformed or insecure values are
 rejected. It ignores `X-Forwarded-For` and `X-Forwarded-Host` for this purpose.
@@ -64,22 +64,44 @@ worker or dependency inherently trustworthy.
 
 ## Private HTTP hostnames
 
-The supplied Compose and Portainer templates set
-`LAKE_PASS_HOST_CHECK_ENABLED=false`: private HTTP accepts any syntactically valid
-Host, so a LAN address or reverse proxy hostname can change without an app
-allowlist update. To restrict private hostnames, set the toggle to `true` and
-configure exact `LAKE_PASS_ALLOWED_HOSTS` entries, including ports where needed.
-Localhost and loopback remain accepted; hostnames from `LAKE_PASS_ALLOWED_ORIGINS`
-also join the allowed list. The private hostname list is ignored while the toggle
-is `false`. The application defaults to enabled checks when the setting is
-absent or empty, preserving older stacks that update only their image.
+Hostname checks are **off by default**. Private HTTP accepts any syntactically
+valid Host, so a LAN address or reverse proxy hostname can change without an
+allowlist update. Administrators can open **Settings > Network**, enable hostname
+checks, and enter the allowed host/port values. These settings apply to the whole
+installation, take effect when saved, and persist across container restarts.
+Localhost and loopback remain accepted. With checks off, the private host list is
+ignored.
 
-This toggle controls hostname validation only. Authentication, CSRF tokens, and
+The supplied Compose and Portainer templates leave
+`LAKE_PASS_HOST_CHECK_ENABLED` empty so the UI controls these settings. Before
+network settings have been saved, `LAKE_PASS_ALLOWED_HOSTS` and hostnames from
+`LAKE_PASS_ALLOWED_ORIGINS` populate the initial list. Once saved, the UI list
+controls private HTTP access; the environment list continues to define additional
+public-mode health-check authorities.
+
+For an operator override, set `LAKE_PASS_HOST_CHECK_ENABLED=true` or `false` and
+recreate the container. An explicit value takes precedence over saved network
+settings and locks the UI controls. When overriding with `true`, configure exact
+`LAKE_PASS_ALLOWED_HOSTS` entries, including ports where needed; hostnames from
+`LAKE_PASS_ALLOWED_ORIGINS` also join this deployment list. To restore UI control,
+remove or empty the canonical override and recreate the container. If a legacy
+`BUNTZEN_HOST_CHECK_ENABLED` is also present, remove it too or use an explicitly
+empty canonical value, which takes precedence over the legacy setting.
+
+If an allowlist change prevents access, set
+`LAKE_PASS_HOST_CHECK_ENABLED=false` in the deployment and recreate the container.
+This restores private HTTP access without deleting saved network settings. Adjust
+the deployment host list and use an explicit `true` override to regain restricted
+access if needed. Before returning to UI control, open the app through a hostname
+in the saved list, then remove or empty the override and recreate the container;
+you can now correct the saved list in Settings > Network.
+
+This setting controls hostname validation only. Authentication, CSRF tokens, and
 browser-origin checks remain active. A private reverse proxy should preserve
 the original Host; if it rewrites Host, configure the browser-facing origin in
-`LAKE_PASS_ALLOWED_ORIGINS`. Public HTTPS always enforces its configured origin,
-trusted connector requirements, and limited health-check authorities regardless
-of this toggle.
+`LAKE_PASS_ALLOWED_ORIGINS` and allow the rewritten authority when checks are on.
+Public HTTPS always enforces its configured origin, trusted connector requirements,
+and limited health-check authorities regardless of these private HTTP settings.
 
 ## Authentication admission
 

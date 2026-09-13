@@ -146,7 +146,7 @@ input::-webkit-date-and-time-value { text-align: left; }
 
 /* Settings form a single hierarchy with local account navigation. */
 .settings-page { max-width: 1040px; }
-.settings-nav { display: flex; align-items: center; gap: 26px; margin: 0 0 28px; border-bottom: 1px solid var(--line); }
+.settings-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 0 26px; margin: 0 0 28px; border-bottom: 1px solid var(--line); }
 .settings-nav a { padding: 12px 0; color: var(--muted); border-bottom: 2px solid transparent; }
 .settings-nav a[aria-current] { color: var(--text); border-color: var(--blue); }
 .settings-nav a:hover { color: var(--text); }
@@ -163,6 +163,21 @@ input::-webkit-date-and-time-value { text-align: left; }
 .settings-fields > .actions:first-child { margin-top: 0; }
 .settings-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 20px 0 0; }
 .settings-actions p { margin: 0; color: var(--muted); font-size: 12px; }
+.network-fields { display: grid; gap: 20px; }
+.network-switch { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: 5px 0; cursor: pointer; }
+.network-switch > span { display: grid; gap: 4px; min-width: 0; }
+.network-switch input { appearance: none; flex: 0 0 38px; width: 38px; height: 22px; margin: 1px 0 0; border: 1px solid #66758a; border-radius: 12px; background: #364357; cursor: pointer; }
+.network-switch input::before { content: ""; display: block; width: 16px; height: 16px; margin: 2px; border-radius: 50%; background: var(--text); }
+.network-switch input:checked { background: var(--blue); border-color: var(--blue); }
+.network-switch input:checked::before { transform: translateX(16px); background: #102136; }
+.network-switch input:disabled { opacity: .55; cursor: not-allowed; }
+.network-fields textarea { display: block; width: 100%; min-width: 0; min-height: 132px; margin: 0; padding: 10px 12px; border: 1px solid #3b485c; border-radius: 6px; background: #111821; color: var(--text); font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+.network-fields textarea::placeholder { color: #8290a4; opacity: 1; }
+.network-fields textarea:focus { border-color: var(--blue); outline: 2px solid var(--blue); outline-offset: 2px; }
+.network-fields textarea:disabled { opacity: .6; cursor: not-allowed; }
+.network-fields .network-current-host { margin: 0; }
+.network-current-host code { color: var(--text); overflow-wrap: anywhere; user-select: all; }
+.network-current-host span { display: block; margin-top: 4px; }
 .settings-section-danger .settings-section-intro h2 { color: #ffb4b4; }
 .settings-section-danger { border-top-color: #573541; }
 .account-form { max-width: none; }
@@ -291,7 +306,7 @@ td a:not(.button) { color: var(--blue); text-decoration: underline; text-underli
   .card-title { flex-wrap: wrap; gap: 10px; }
   .form-spacer { display: none; }
   .form-card fieldset { margin-bottom: 24px; }
-  .settings-nav { gap: 24px; margin-bottom: 20px; }
+  .settings-nav { column-gap: 24px; margin-bottom: 20px; }
   .settings-section { padding: 18px; }
   .settings-fields .form-grid { grid-template-columns: 1fr; }
   .settings-actions { justify-content: flex-start; flex-wrap: wrap; }

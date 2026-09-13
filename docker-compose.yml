@@ -12,8 +12,9 @@ services:
       BLUEBUBBLES_URL: "${BLUEBUBBLES_URL:-http://bluebubbles.example:1234}"
       LAKE_PASS_BLUEBUBBLES_ENDPOINTS: "${LAKE_PASS_BLUEBUBBLES_ENDPOINTS-${BUNTZEN_BLUEBUBBLES_ENDPOINTS:-}}"
       LAKE_PASS_YODEL_ORIGINS: "${LAKE_PASS_YODEL_ORIGINS-${BUNTZEN_YODEL_ORIGINS:-https://yodelportal.com}}"
-      # Private LAN hosting accepts any hostname unless checks are enabled.
-      LAKE_PASS_HOST_CHECK_ENABLED: "${LAKE_PASS_HOST_CHECK_ENABLED-${BUNTZEN_HOST_CHECK_ENABLED:-false}}"
+      # Leave empty to manage hostname checks in Settings > Network (off by default).
+      # An explicit true/false overrides and locks the UI setting.
+      LAKE_PASS_HOST_CHECK_ENABLED: "${LAKE_PASS_HOST_CHECK_ENABLED-${BUNTZEN_HOST_CHECK_ENABLED:-}}"
       LAKE_PASS_ALLOWED_HOSTS: "${LAKE_PASS_ALLOWED_HOSTS-${BUNTZEN_ALLOWED_HOSTS:-}}"
       LAKE_PASS_ALLOWED_ORIGINS: "${LAKE_PASS_ALLOWED_ORIGINS-${BUNTZEN_ALLOWED_ORIGINS:-}}"
       LAKE_PASS_PUBLIC_ORIGIN: "${LAKE_PASS_PUBLIC_ORIGIN-${BUNTZEN_PUBLIC_ORIGIN:-}}"

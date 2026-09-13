@@ -80,6 +80,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /account/username", s.authenticated(s.accountUsername))
 	s.mux.HandleFunc("GET /settings", s.authenticated(s.settingsPage))
 	s.mux.HandleFunc("POST /settings", s.authenticated(s.settingsUpdate))
+	s.mux.HandleFunc("GET /settings/network", s.authenticated(s.adminOnly(s.networkSettingsPage)))
+	s.mux.HandleFunc("POST /settings/network", s.authenticated(s.adminOnly(s.networkSettingsUpdate)))
 	s.mux.HandleFunc("GET /lakes", s.authenticated(s.lakesPage))
 	s.mux.HandleFunc("GET /lakes/{lakeID}", s.authenticated(s.lakePage))
 	s.mux.HandleFunc("POST /lakes/{lakeID}", s.authenticated(s.lakeUpdate))

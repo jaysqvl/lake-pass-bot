@@ -16,6 +16,8 @@ base_url=""
 appdata_mount="$volume"
 key_directory=""
 swap_limit_supported=""
+network_allowed_host="lake-pass-smoke.example:8080"
+network_unlisted_host="unlisted-lake-pass.example:8080"
 
 cleanup() {
   status=$?
@@ -177,6 +179,95 @@ fetch_authenticated_landing() {
   [[ -n "$(header_value "$headers" Content-Security-Policy)" ]] || fail "authenticated HTML omitted its Content Security Policy"
 }
 
+# Scope token extraction to the Network form: authenticated pages also contain
+# the logout form's CSRF token. Verify the toggle is editable and reflects the
+# expected saved state before using its real token for the next UI update.
+network_settings_csrf() {
+  local cookies="$1" expected_enabled="$2"
+  local page="$workspace/network-settings-page" code=""
+  code="$(curl --silent --show-error --max-time 10 \
+    --cookie "$cookies" --output "$page" --write-out '%{http_code}' \
+    "$base_url/settings/network")"
+  [[ "$code" == "200" ]] || fail "Network settings returned HTTP $code"
+  docker exec --interactive "$container" python -c '
+from html.parser import HTMLParser
+import sys
+
+
+class NetworkFormParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.in_form = False
+        self.forms = []
+        self.tokens = []
+        self.toggles = []
+        self.hosts = []
+
+    def handle_starttag(self, tag, attrs):
+        values = dict(attrs)
+        if tag == "form":
+            self.in_form = values.get("action") == "/settings/network"
+            if self.in_form:
+                self.forms.append(values)
+        if not self.in_form:
+            return
+        if tag == "input" and values.get("name") == "csrf_token":
+            self.tokens.append(values.get("value") or "")
+        if tag == "input" and values.get("name") == "host_check_enabled":
+            self.toggles.append(values)
+        if tag == "textarea" and values.get("name") == "allowed_hosts":
+            self.hosts.append(values)
+
+    def handle_endtag(self, tag):
+        if tag == "form":
+            self.in_form = False
+
+
+parser = NetworkFormParser()
+parser.feed(sys.stdin.read())
+assert len(parser.forms) == 1 and parser.forms[0].get("method", "").lower() == "post", "missing Network settings form"
+assert len(parser.tokens) == 1 and parser.tokens[0], "expected one Network form CSRF token"
+assert len(parser.toggles) == 1, "missing hostname toggle"
+toggle = parser.toggles[0]
+assert toggle.get("type") == "checkbox" and toggle.get("role") == "switch", "hostname setting is not an accessible toggle"
+assert "disabled" not in toggle, "hostname toggle is unexpectedly locked by deployment configuration"
+assert ("checked" in toggle) == (sys.argv[1] == "true"), "hostname toggle differs from expected saved state"
+assert len(parser.hosts) == 1 and "disabled" not in parser.hosts[0], "allowed hostnames are not editable"
+print(parser.tokens[0])
+' "$expected_enabled" <"$page" || fail "Network settings did not expose the expected editable state"
+}
+
+save_network_settings() {
+  local cookies="$1" enabled="$2" csrf="$3" code=""
+  local form=(--data-urlencode "csrf_token=$csrf" --data-urlencode "allowed_hosts=${base_url#http://},$network_allowed_host")
+  if [[ "$enabled" == "true" ]]; then
+    form+=(--data-urlencode "host_check_enabled=on")
+  fi
+  code="$(curl --silent --show-error --max-time 10 \
+    --cookie "$cookies" --header "Origin: $base_url" \
+    "${form[@]}" \
+    --dump-header "$workspace/network-save-headers" \
+    --output "$workspace/network-save-response" --write-out '%{http_code}' \
+    "$base_url/settings/network")"
+  [[ "$code" == "303" ]] || fail "saving Network settings returned HTTP $code"
+  [[ "$(header_value "$workspace/network-save-headers" Location)" == "/settings/network?ok=updated" ]] || fail "Network settings returned an unexpected save redirect"
+}
+
+validate_hostname_boundary() {
+  local enabled="$1" code="" expected_unlisted="200"
+  if [[ "$enabled" == "true" ]]; then
+    expected_unlisted="400"
+  fi
+  code="$(curl --silent --show-error --max-time 10 \
+    --header "Host: $network_allowed_host" --output /dev/null \
+    --write-out '%{http_code}' "$base_url/login")"
+  [[ "$code" == "200" ]] || fail "listed hostname returned HTTP $code"
+  code="$(curl --silent --show-error --max-time 10 \
+    --header "Host: $network_unlisted_host" --output /dev/null \
+    --write-out '%{http_code}' "$base_url/login")"
+  [[ "$code" == "$expected_unlisted" ]] || fail "unlisted hostname returned HTTP $code with hostname checks $enabled"
+}
+
 start_container() {
   local key_options=()
   if [[ -n "$key_directory" ]]; then
@@ -236,7 +327,7 @@ validate_doctor() {
   report="$(docker exec "$container" /usr/local/bin/lake-pass-bot doctor)"
   printf '%s\n' "$report" | jq -e '
     .ok == true and
-    .schema_version == 10 and
+    .schema_version == 11 and
     .action_protocol == 2 and
     .appdata_dir == "/appdata" and
     .database_path == "/appdata/lake-pass-bot.db" and
@@ -382,6 +473,11 @@ validate_doctor
 [[ "$(docker exec "$container" /usr/local/bin/buntzen version)" == "$(docker exec "$container" /usr/local/bin/lake-pass-bot version)" ]] || fail "legacy CLI alias differs from the renamed binary"
 perform_setup
 perform_login before-restart
+network_csrf="$(network_settings_csrf "$workspace/before-restart-cookies" false)"
+validate_hostname_boundary false
+save_network_settings "$workspace/before-restart-cookies" true "$network_csrf"
+network_settings_csrf "$workspace/before-restart-cookies" true >/dev/null
+validate_hostname_boundary true
 
 docker exec --interactive "$container" sh -eu -c 'cat > /tmp/lake-pass-browser-smoke.py' \
   < scripts/docker_browser_smoke.py
@@ -417,6 +513,11 @@ setup_code="$(curl --silent --show-error --max-time 10 \
 
 validate_doctor
 perform_login after-restart
+network_csrf="$(network_settings_csrf "$workspace/after-restart-cookies" true)"
+validate_hostname_boundary true
+save_network_settings "$workspace/after-restart-cookies" false "$network_csrf"
+network_settings_csrf "$workspace/after-restart-cookies" false >/dev/null
+validate_hostname_boundary false
 
 service_logs="$(docker logs "$container" 2>&1)"
 [[ "$service_logs" != *"$setup_token"* ]] || fail "restarted service logs exposed the setup token"
@@ -470,4 +571,4 @@ docker rm "$container" >/dev/null
 start_container
 perform_login bind-restart
 
-echo "Container smoke test passed: version, UID 1001, finite resources, read-only root/key mount, two browsers with service workers, encrypted state, setup/login, volume and bind restart."
+echo "Container smoke test passed: version, UID 1001, finite resources, read-only root/key mount, two browsers with service workers, encrypted state, setup/login, UI hostname toggle with restart persistence, volume and bind restart."

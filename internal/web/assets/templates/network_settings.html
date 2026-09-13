@@ -1,0 +1,30 @@
+{{define "content"}}
+<div class="settings-page network-settings-page">
+  <section class="section-head"><div><p class="eyebrow">Settings</p><h1>Network</h1><p>Manage the addresses used to reach this Lake Pass Bot server.</p></div></section>
+  {{template "settings-nav" .}}
+  {{if .FormError}}<div id="form-error" class="flash error" role="alert" tabindex="-1">{{.FormError}}</div>{{end}}
+  {{if .ManagedReason}}<div class="context-note" id="network-managed" role="note">{{.ManagedReason}}</div>{{end}}
+  <form action="/settings/network" method="post" class="settings-form" autocomplete="off"{{if .ManagedReason}} aria-describedby="network-managed"{{end}}>
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="settings-sections">
+      <section class="settings-section" aria-labelledby="network-hostnames-heading">
+        <div class="settings-section-intro"><h2 id="network-hostnames-heading">Hostname checks</h2><p>Choose whether to restrict the hostnames this server accepts.</p></div>
+        <div class="settings-fields network-fields">
+          <label class="network-switch" for="host-check-enabled">
+            <input id="host-check-enabled" type="checkbox" role="switch" name="host_check_enabled" value="on" aria-describedby="host-check-help"{{if .HostCheckEnabled}} checked{{end}}{{if .ManagedReason}} disabled{{end}}>
+            <span><span>Enable hostname checks</span><small id="host-check-help">Off by default. When enabled, only allowed hostnames can reach the app.</small></span>
+          </label>
+          <label class="field" for="allowed-hosts">
+            <span>Allowed hostnames</span>
+            <textarea id="allowed-hosts" name="allowed_hosts" rows="5" spellcheck="false" autocapitalize="none" placeholder="lake-pass.example:8080" aria-describedby="allowed-hosts-help current-host-help"{{if .ManagedReason}} disabled{{end}}>{{.AllowedHosts}}</textarea>
+            <small class="field-help" id="allowed-hosts-help">Enter one hostname per line, including the port if you use one. Leave out http://, https://, and paths. This list is used only when checks are enabled. Localhost remains available.</small>
+          </label>
+          <p class="field-help network-current-host" id="current-host-help">Current address: <code>{{.CurrentHost}}</code><span>Keep this address in the list when enabling checks so you can still access the app.</span></p>
+        </div>
+      </section>
+    </div>
+    <div class="settings-actions actions"><p>Changes apply to all users immediately after saving.</p><button type="submit" class="primary"{{if .ManagedReason}} disabled{{end}}>Save network settings</button></div>
+  </form>
+</div>
+{{end}}
+{{template "base" .}}

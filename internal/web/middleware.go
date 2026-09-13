@@ -46,6 +46,10 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		var boundaryErr error
 		r, boundaryErr = s.enforceHTTPBoundary(r)
 		if boundaryErr != nil {
+			if errors.Is(boundaryErr, errNetworkSettingsUnavailable) {
+				http.Error(w, "network settings temporarily unavailable", http.StatusServiceUnavailable)
+				return
+			}
 			http.Error(w, boundaryErr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -60,6 +64,10 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 }
 
 func (s *Server) hostAllowed(value string) bool {
+	return hostAllowedBy(value, s.config.AllowedHosts)
+}
+
+func hostAllowedBy(value string, allowedHosts []string) bool {
 	host, err := origin.Host(value)
 	if err != nil {
 		return false
@@ -75,7 +83,7 @@ func (s *Server) hostAllowed(value string) bool {
 	if address := net.ParseIP(hostname); address != nil && address.IsLoopback() {
 		return true
 	}
-	for _, allowed := range s.config.AllowedHosts {
+	for _, allowed := range allowedHosts {
 		if host == allowed {
 			return true
 		}

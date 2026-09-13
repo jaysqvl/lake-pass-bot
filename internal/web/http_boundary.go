@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -36,7 +37,17 @@ func (s *Server) enforceHTTPBoundary(r *http.Request) (*http.Request, error) {
 		if _, err := origin.Host(r.Host); err != nil {
 			return r, errors.New("invalid Host header")
 		}
-		if s.config.HostCheckEnabled && !s.hostAllowed(r.Host) {
+		// An explicit off override also provides recovery if persisted settings
+		// are unavailable. Public HTTPS never takes this private-mode path.
+		if s.config.HostCheckConfigured && !s.config.HostCheckEnabled {
+			return r, nil
+		}
+		settings, err := s.privateNetworkSettings(r.Context())
+		if err != nil {
+			slog.Error("read network settings", "error", err)
+			return r, errNetworkSettingsUnavailable
+		}
+		if settings.HostCheckEnabled && !hostAllowedBy(r.Host, settings.AllowedHosts) {
 			return r, errors.New("invalid Host header")
 		}
 		return r, nil

@@ -133,7 +133,7 @@ jobs:
           for manifest in docker-compose.yml deploy/portainer.yml; do
             docker compose -f "$manifest" config --format json | jq -e '
               .services["lake-pass-bot"] |
-              .environment.LAKE_PASS_HOST_CHECK_ENABLED == "false" and
+              .environment.LAKE_PASS_HOST_CHECK_ENABLED == "" and
               .environment.LAKE_PASS_ALLOWED_HOSTS == "" and
               (.cpus | tonumber) == 2 and
               (.mem_limit | tonumber) == (4 * 1024 * 1024 * 1024) and
@@ -192,6 +192,11 @@ jobs:
             (.volumes | any(.source == "/tmp/legacy-appdata" and .target == "/appdata")) and
             (.volumes | any(.source == "/tmp/legacy-appdata" and .target == "/run/buntzen-key" and .read_only == true))
           ' >/dev/null
+          # An empty canonical override restores UI control even with a legacy value.
+          LAKE_PASS_HOST_CHECK_ENABLED='' \
+            docker compose -f deploy/portainer.yml config --format json | jq -e '
+              .services["lake-pass-bot"].environment.LAKE_PASS_HOST_CHECK_ENABLED == ""
+            ' >/dev/null
           LAKE_PASS_DEBUG=false LAKE_PASS_MASTER_KEY_FILE='' \
             LAKE_PASS_HOST_CHECK_ENABLED=false LAKE_PASS_ALLOWED_HOSTS='' \
             docker compose -f deploy/portainer.yml config --format json | jq -e '

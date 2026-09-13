@@ -67,14 +67,18 @@ Optional settings retain their legacy fallbacks. The template uses:
   persistent `/data` mount, for example `/data/lake-pass-bot/seccomp_profile.json`.
 - `BLUEBUBBLES_URL` and `LAKE_PASS_BLUEBUBBLES_ENDPOINTS`: when using BlueBubbles,
   configure its exact [approved origin and network](public-exposure.md#outbound-provider-access).
-- `LAKE_PASS_HOST_CHECK_ENABLED`: defaults to `false` in the supplied templates,
-  allowing any valid hostname in private HTTP mode. Set it to `true` to enforce
-  `LAKE_PASS_ALLOWED_HOSTS`; that list is ignored in private mode while checks are
-  disabled. Older stacks that omit the setting retain enabled hostname checks.
-- `LAKE_PASS_ALLOWED_HOSTS`: optional exact host/port list when hostname checks are
-  enabled. `LAKE_PASS_ALLOWED_ORIGINS` permits specific browser origins when a
-  private reverse proxy rewrites Host. Preserving the original Host avoids that
-  extra configuration. CSRF and browser-origin checks stay enabled.
+- `LAKE_PASS_HOST_CHECK_ENABLED`: leave empty (the template default) for
+  administrator control through **Settings > Network**. Checks default to off;
+  UI changes apply immediately and persist across restarts. An explicit `true`
+  or `false` overrides saved settings and locks the UI controls. Empty or remove
+  the override to restore UI control; use `false` to recover from a private HTTP
+  hostname lockout. See [hostname settings and recovery](public-exposure.md#private-http-hostnames).
+- `LAKE_PASS_ALLOWED_HOSTS`: optional initial host/port list, and the active list
+  during a deployment override. Once network settings are saved in the UI, that
+  saved list controls private HTTP access unless an override is set.
+  `LAKE_PASS_ALLOWED_ORIGINS` permits specific browser origins when a private
+  reverse proxy rewrites Host. Preserving the original Host avoids that extra
+  configuration. CSRF and browser-origin checks stay enabled.
 - `MAX_CONCURRENT_JOBS`: preserve your chosen concurrency.
 
 The template keeps `SCHEDULES_ENABLED=false`. Complete the
