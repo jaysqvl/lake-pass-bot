@@ -78,7 +78,12 @@ func upcomingVisits(bookings []model.BookingRequest, jobs []model.Job, now time.
 			continue
 		}
 		booking, ok := byID[*job.BookingRequestID]
-		if !ok || seen[booking.ID] || job.UserID != booking.UserID || job.ProfileID != booking.ProfileID {
+		if !ok || !booking.Enabled || seen[booking.ID] || job.UserID != booking.UserID || job.ProfileID != booking.ProfileID {
+			continue
+		}
+		// Old saved requests could be edited after completion, so their current
+		// date is not evidence of an upcoming confirmed visit.
+		if job.Status.Terminal() && booking.Kind != model.BookingKindSnapshot {
 			continue
 		}
 		location, err := time.LoadLocation(booking.Timezone)
