@@ -92,7 +92,7 @@ func TestHomeRedirectsUnconfiguredAccountToLakes(t *testing.T) {
 func TestUpcomingVisitsRequireBookingJobsAndUseLakeTimezone(t *testing.T) {
 	now := time.Date(2026, 9, 13, 1, 0, 0, 0, time.UTC)
 	bookings := []model.BookingRequest{
-		{ID: 1, Name: "Alphabetically first, later visit", TargetDate: "2026-09-20", Timezone: "America/Vancouver", Enabled: true},
+		{ID: 1, Kind: model.BookingKindSnapshot, Name: "Alphabetically first, later visit", TargetDate: "2026-09-20", Timezone: "America/Vancouver", Enabled: true},
 		{ID: 2, TargetDate: "2026-09-11", Timezone: "America/Vancouver", Enabled: true},
 		{ID: 3, TargetDate: "2026-09-12", Timezone: "America/Vancouver", Enabled: true},
 		{ID: 4, TargetDate: "2026-09-12", Timezone: "UTC", Enabled: true},
@@ -116,11 +116,16 @@ func TestUpcomingVisitsRequireBookingJobsAndUseLakeTimezone(t *testing.T) {
 	jobs[7].ProfileID = 999
 	jobs[8].Command = model.CommandAuthCheck
 	jobs = append(jobs, jobs[0]) // A second historical attempt does not duplicate the visit.
+	for _, kind := range []model.BookingKind{model.BookingKindSaved, model.BookingKindArchived} {
+		id := int64(len(bookings) + 1)
+		bookings = append(bookings, model.BookingRequest{ID: id, Kind: kind, TargetDate: "2026-09-14", Timezone: "UTC", Enabled: kind == model.BookingKindSaved})
+		jobs = append(jobs, model.Job{ID: id, BookingRequestID: &id, Command: model.CommandBook, Status: model.JobSucceeded})
+	}
 	var urls []string
 	for _, visit := range upcomingVisits(bookings, jobs, now) {
 		urls = append(urls, visit.URL)
 	}
-	if !slices.Equal(urls, []string{"/jobs/3", "/jobs/5", "/jobs/1"}) {
+	if !slices.Equal(urls, []string{"/jobs/3", "/jobs/1"}) {
 		t.Fatalf("upcoming URLs = %v; want local-today then scheduled/succeeded visits", urls)
 	}
 	if bookings[0].ID != 1 {
