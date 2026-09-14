@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.2](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.7.1...lake-pass-bot-v0.7.2) (2026-09-14)
+
+### Maintenance
+
+* remove the unused saved-request deletion message and obsolete scheduler mutation when disabling an account; retain existing jobs and reservation history ([#89](https://github.com/jaysqvl/lake-pass-bot/pull/89)).
+* clarify the supported booking lifecycle and contributor requirements for complete workflow cleanup and review.
+
+This patch has no database migration or deployment configuration changes.
+
 ## [0.7.1](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.7.0...lake-pass-bot-v0.7.1) (2026-09-14)
 
 
