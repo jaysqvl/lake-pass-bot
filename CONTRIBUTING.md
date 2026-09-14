@@ -8,9 +8,11 @@ implementation is usually better here than a reusable framework.
 - Use domain names consistently: lake settings are reusable booking defaults,
   a booking request stores execution inputs, a job is one execution, a profile
   is a provider identity connected to a lake, and an OTP source is its inbox
-  configuration. New Book actions create a request snapshot with the job;
-  legacy saved requests retain their separate lifecycle. Do not use these terms
-  interchangeably or introduce another preset for the same lake setup.
+  configuration. Each Book action creates immutable request inputs and a job in
+  one transaction. Historical saved requests remain only for existing jobs,
+  reservations, and supported CLI operations; they have no editable UI or
+  automatic queueing lifecycle. Do not use these terms interchangeably or
+  introduce another preset for the same lake setup.
 - Use Go's `ID`, `URL`, `HTTP`, `OTP`, and `CSRF` initialisms. Short names such as
   `ctx`, `err`, `req`, and receiver names are fine in small scopes; give long-lived
   state descriptive names. Python uses `snake_case` and explicit unit suffixes
@@ -60,6 +62,13 @@ process boundary; do not silently turn programming errors into success.
 
 ## Tests and review
 
+- When replacing a workflow, trace its routes, handlers, storage mutations,
+  background work, templates, and callers. Remove the superseded behavior in the
+  same change. Retain compatibility only for a named caller or stored-data
+  requirement, and keep contributor guidance consistent with the resulting flow.
+- Review the complete user journey, including existing-account upgrades and
+  empty states. Passing tests for the new action does not establish that the
+  surrounding UI still makes sense.
 - Assert externally observable behavior and failure outcomes. A test that checks
   a constant, searches source for a call, or configures a mock to return the
   expected answer is weak evidence by itself.

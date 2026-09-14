@@ -1,5 +1,10 @@
 # UI and UX audit — September 12, 2026
 
+This is a historical review of the September 12 interface. The booking-request
+editor, saved-request cards, and per-request overrides described below have
+since been removed. The current flow is documented in [Lakes](lakes.md#booking-a-visit).
+This review's verification results apply to that earlier interface.
+
 The audit covers navigation, page hierarchy, forms, action availability, feedback, and responsive behavior across the application. The implementation replaces the oversized settings cards and inconsistent form layout with shared spacing, controls, and page structures.
 
 ## Navigation and ownership
