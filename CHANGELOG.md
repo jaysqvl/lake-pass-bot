@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.8.0](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.7.2...lake-pass-bot-v0.8.0) (2026-09-14)
+
+
+### Features
+
+* book visits from lake setup and preserve history when deleting requests ([ff58f8c](https://github.com/jaysqvl/lake-pass-bot/commit/ff58f8cb49ad31290b5fc500f430209f713d7976))
+* rebrand as Lake Pass Bot and organize lake connections ([#78](https://github.com/jaysqvl/lake-pass-bot/issues/78)) ([d8f3ce0](https://github.com/jaysqvl/lake-pass-bot/commit/d8f3ce0f60b415ebe15283f3095b1af19f1e6b2c))
+
+
+### Bug Fixes
+
+* make private hostname checks configurable ([#80](https://github.com/jaysqvl/lake-pass-bot/issues/80)) ([0faf6a5](https://github.com/jaysqvl/lake-pass-bot/commit/0faf6a5032b5850c75e04168a5c314e5b6b9a9d7))
+* manage hostname checks from network settings ([#82](https://github.com/jaysqvl/lake-pass-bot/issues/82)) ([284f063](https://github.com/jaysqvl/lake-pass-bot/commit/284f063ace888ab40c9f0f7d86e956030a3e9702))
+* preserve OTP redaction and explicit worker error boundaries ([96b1ba3](https://github.com/jaysqvl/lake-pass-bot/commit/96b1ba31b323598d5b2a0ec91d80fcfaffe554ab))
+* retire obsolete saved-request UI and automatic queueing ([27d679e](https://github.com/jaysqvl/lake-pass-bot/commit/27d679e5b9d9e537770ffbef4e1e1cb36873be9c))
+
 ## [0.7.2](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.7.1...lake-pass-bot-v0.7.2) (2026-09-14)
 
 ### Maintenance
