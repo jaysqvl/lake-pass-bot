@@ -136,7 +136,6 @@ func base(r *http.Request, title string) BaseData {
 func flashFor(value string) *Flash {
 	messages := map[string]string{
 		"created": "Saved successfully.", "updated": "Changes saved.", "queued": "Job queued.",
-		"deleted": "Saved request deleted. Job history is kept.",
 		"healthy": "Provider authentication succeeded.", "cancelled": "Cancellation requested.", "decided": "Decision sent to the waiting browser.",
 		"setup": "Administrator account created.", "user-created": "User account created.",
 		"username-changed": "Username changed. Use the new username the next time you sign in.",

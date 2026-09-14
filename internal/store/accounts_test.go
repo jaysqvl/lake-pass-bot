@@ -396,15 +396,10 @@ func TestSessionIssuanceRejectsAPreviouslyVerifiedPasswordHash(t *testing.T) {
 	}
 }
 
-func TestDisablingMemberRevokesScheduledQueuedAndActiveWork(t *testing.T) {
+func TestDisablingMemberRevokesQueuedAndActiveWork(t *testing.T) {
 	ctx := context.Background()
 	database, _, memberID := ownershipStore(t)
 	_, _, booking := createOwnedResources(t, database, memberID, "disabled-member")
-	booking.ScheduleEnabled = true
-	booking, err := database.ForUser(memberID).updateLegacyBookingFixture(ctx, booking)
-	if err != nil {
-		t.Fatal(err)
-	}
 	bookingID := booking.ID
 	queued, err := database.ForUser(memberID).EnqueueJob(ctx, EnqueueJobParams{
 		BookingRequestID: &bookingID, Command: model.CommandDryRun, RunMode: model.RunModeDryRun,

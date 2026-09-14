@@ -224,12 +224,6 @@ func (s *Store) UpdateUser(ctx context.Context, id int64, input UserUpdateInput)
 			return model.User{}, fmt.Errorf("revoke disabled user sessions: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE booking_requests SET schedule_enabled = 0, updated_at = ?
-			WHERE user_id = ? AND schedule_enabled = 1
-		`, now, id); err != nil {
-			return model.User{}, fmt.Errorf("disable user schedules: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, `
 			UPDATE jobs SET
 				cancel_requested = 1,
 				status = CASE WHEN status = 'queued' THEN 'cancelled' ELSE status END,

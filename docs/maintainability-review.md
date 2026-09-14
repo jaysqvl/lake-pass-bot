@@ -1,5 +1,11 @@
 # Engineering review — September 13, 2026
 
+This review covers the 0.6.2 baseline and the audit changes described below.
+Later releases replaced saved-request editing and automatic queueing with
+per-visit jobs. See [the current booking flow](lakes.md#booking-a-visit) and
+[development guidelines](../CONTRIBUTING.md) for the resulting lifecycle; this
+review does not establish the quality of those later changes.
+
 This review examined the application, tests, and build/deployment tooling at
 `063f68260d06fb4933735e4415f6a05cd20c5336` (0.6.2), including the recent lake and
 account settings work. It rechecked the September 5 review against current code.
