@@ -11,29 +11,18 @@ import (
 	"github.com/jaysqvl/lake-pass-bot/internal/model"
 )
 
-func TestSavedRequestAndJobPagesSeparateSchedulingFromQueuedWork(t *testing.T) {
+func TestJobPagesKeepSchedulingAndCancellationWithoutSavedRequestUI(t *testing.T) {
 	fixture := newWebFixture(t)
 	ctx := context.Background()
 	_, booking := createImmediateWebBooking(t, fixture, fixture.admin.ID, "queue-status", true)
 	booking.Timezone = "America/Vancouver"
 	booking.TargetDate = "2030-09-10"
-	var err error
-	booking, err = fixture.store.ForUser(fixture.admin.ID).UpdateBookingRequest(ctx, booking)
-	if err != nil {
-		t.Fatal(err)
-	}
 	cookies := loginCookies(t, fixture)
-	form := serveForm(fixture, http.MethodGet, fmt.Sprintf("/bookings/%d", booking.ID), cookies, nil)
-	for _, want := range []string{"Enabled when server scheduling is on", "Book another day", "Delete saved request"} {
-		if form.Code != http.StatusOK || !strings.Contains(form.Body.String(), want) {
-			t.Fatalf("booking form missing %q: %d %s", want, form.Code, form.Body.String())
-		}
-	}
 	before := serveForm(fixture, http.MethodGet, "/", cookies, nil)
-	if before.Code != http.StatusOK || !strings.Contains(before.Body.String(), "Auto-queueing is off for this server") || !strings.Contains(before.Body.String(), "Already queued jobs remain scheduled") {
-		t.Fatalf("server scheduling notice: %d %s", before.Code, before.Body.String())
+	if before.Code != http.StatusOK || strings.Contains(before.Body.String(), "Automatic queueing is off") || strings.Contains(before.Body.String(), fmt.Sprintf(`/bookings/%d`, booking.ID)) {
+		t.Fatalf("home retained saved-request scheduling UI: %d %s", before.Code, before.Body.String())
 	}
-	job, err := fixture.server.engine.QueueBooking(ctx, fixture.admin.ID, booking.ID, model.CommandBook, "")
+	job, err := fixture.server.engine.QueueLakeBooking(ctx, fixture.admin.ID, booking)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,16 +42,17 @@ func TestSavedRequestAndJobPagesSeparateSchedulingFromQueuedWork(t *testing.T) {
 	if err := fixture.store.ForUser(fixture.admin.ID).RequestJobCancellation(ctx, job.ID); err != nil {
 		t.Fatal(err)
 	}
-	page = serveForm(fixture, http.MethodGet, fmt.Sprintf("/bookings/%d", booking.ID), cookies, nil)
-	if page.Code != http.StatusOK || strings.Contains(page.Body.String(), "View pending job") || strings.Contains(page.Body.String(), fmt.Sprintf(`href="/jobs/%d"`, job.ID)) {
-		t.Fatal("cancelled job still blocks the saved request")
+	page = serveForm(fixture, http.MethodGet, "/", cookies, nil)
+	// Recent activity retains the cancelled job, but it is no longer an upcoming visit.
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "0 upcoming visits") {
+		t.Fatalf("cancelled job remained an upcoming visit: %d %s", page.Code, page.Body.String())
 	}
 }
 
 func TestJobDetailsUseImmediateJobsSavedManualMode(t *testing.T) {
 	fixture := newWebFixture(t)
 	_, booking := createImmediateWebBooking(t, fixture, fixture.admin.ID, "manual-status", true)
-	job, err := fixture.server.engine.QueueBookingNow(context.Background(), fixture.admin.ID, booking.ID)
+	job, err := fixture.server.engine.QueueLakeBooking(context.Background(), fixture.admin.ID, booking)
 	if err != nil {
 		t.Fatal(err)
 	}

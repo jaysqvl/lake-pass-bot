@@ -77,10 +77,11 @@ func TestLakeMigrationPreservesBookingsCredentialsAndReservation(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(gotJob, job) {
 		t.Fatalf("job history changed: before=%+v after=%+v err=%v", job, gotJob, err)
 	}
-	conflict, err := database.BookingConflict(ctx, testUserID, booking.ID, model.CommandBook)
-	if err != nil || !conflict.Reservation || conflict.Job == nil || conflict.Job.ID != job.ID {
-		t.Fatalf("reservation was lost: %+v, %v", conflict, err)
+	var reservationJobID int64
+	if err := database.db.QueryRowContext(ctx, "SELECT job_id FROM booking_reservations WHERE profile_id=? AND target_date=?", booking.ProfileID, booking.TargetDate).Scan(&reservationJobID); err != nil || reservationJobID != job.ID {
+		t.Fatalf("migration lost reservation: job=%d err=%v", reservationJobID, err)
 	}
+
 	if _, err := database.SystemEnqueueJob(ctx, EnqueueJobParams{BookingRequestID: &booking.ID, Command: model.CommandBook, RunMode: model.RunModeAuto}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("upgrade permitted a duplicate booking: %v", err)
 	}
@@ -94,12 +95,9 @@ func TestBookingLakeSelectionPersistsAndRejectsUnknown(t *testing.T) {
 		t.Fatalf("legacy caller did not receive a persistent lake: %+v", booking)
 	}
 	booking.LakeID = "unknown-lake"
-	if _, err := database.UpdateBookingRequest(ctx, testUserID, booking); err == nil {
-		t.Fatal("unknown lake update was accepted")
-	}
 	booking.ID = 0
 	booking.Name = "unknown lake"
-	if _, err := database.CreateBookingRequest(ctx, testUserID, booking); err == nil {
+	if _, err := database.ForUser(testUserID).EnqueueBookingRequest(ctx, booking, EnqueueJobParams{Command: model.CommandDryRun}); err == nil {
 		t.Fatal("unknown lake creation was accepted")
 	}
 }

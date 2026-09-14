@@ -40,28 +40,6 @@ func TestWindowUsesPreviousLocalCalendarDayAcrossDST(t *testing.T) {
 	}
 }
 
-func TestShouldQueueUsesBoundedWindow(t *testing.T) {
-	window, err := WindowFor(validRequest())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ShouldQueue(window.PrepAt.Add(-time.Nanosecond), window) {
-		t.Fatal("queued before prep")
-	}
-	if !ShouldQueue(window.PrepAt, window) {
-		t.Fatal("did not queue at the inclusive preparation boundary")
-	}
-	if !ShouldQueue(window.ReleaseAt, window) {
-		t.Fatal("did not queue at release")
-	}
-	if ShouldQueue(window.PollEndsAt, window) {
-		t.Fatal("queued at the exclusive poll-window boundary")
-	}
-	if ShouldQueue(window.PollEndsAt.Add(time.Nanosecond), window) {
-		t.Fatal("queued after poll window")
-	}
-}
-
 func TestWindowUsesSelectedDestinationAndRejectsUnknown(t *testing.T) {
 	request := validRequest()
 	request.LakeID = destinations.DefaultLakeID

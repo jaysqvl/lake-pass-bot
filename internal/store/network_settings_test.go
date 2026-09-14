@@ -171,7 +171,7 @@ func TestNetworkSettingsMigrationPreservesAccountAndBookingState(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if version, err := database.SchemaVersion(ctx); err != nil || version != 13 {
+	if version, err := database.SchemaVersion(ctx); err != nil || version != 14 {
 		t.Fatalf("schema version=%d err=%v", version, err)
 	}
 	if _, err := database.SystemGetNetworkSettings(ctx); !errors.Is(err, ErrNotFound) {

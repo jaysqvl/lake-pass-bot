@@ -8,12 +8,12 @@ import (
 	"github.com/jaysqvl/lake-pass-bot/internal/model"
 )
 
-func TestBookingSnapshotMigrationPreservesSavedSchedulesAndExecution(t *testing.T) {
+func TestBookingSnapshotMigrationRetiresSchedulesAndPreservesExecution(t *testing.T) {
 	ctx := context.Background()
 	database := ownedTestStore(t)
 	_, booking := fixtureProfileAndBooking(t, database, "snapshot-migration")
 	booking.ScheduleEnabled = true
-	booking, err := database.ForUser(testUserID).UpdateBookingRequest(ctx, booking)
+	booking, err := database.ForUser(testUserID).updateLegacyBookingFixture(ctx, booking)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,20 +49,18 @@ func TestBookingSnapshotMigrationPreservesSavedSchedulesAndExecution(t *testing.
 			t.Fatal(err)
 		}
 	}
-	requests, err := database.ForUser(testUserID).ListSavedBookingRequests(ctx)
+	booking.ScheduleEnabled = false
+	requests, err := database.ForUser(testUserID).ListBookingRequests(ctx)
 	if err != nil || len(requests) != 1 || !reflect.DeepEqual(requests[0], booking) {
 		t.Fatalf("migration changed saved request: %+v err=%v", requests, err)
-	}
-	scheduled, err := database.SystemListScheduledBookingRequests(ctx)
-	if err != nil || len(scheduled) != 1 || !reflect.DeepEqual(scheduled[0], booking) {
-		t.Fatalf("migration changed schedule: %+v err=%v", scheduled, err)
 	}
 	retained, err := database.ForUser(testUserID).GetJob(ctx, job.ID)
 	if err != nil || !reflect.DeepEqual(retained, job) {
 		t.Fatalf("migration changed pending execution: %+v err=%v", retained, err)
 	}
-	conflict, err := database.ForUser(testUserID).BookingConflict(ctx, booking.ID, model.CommandBook)
-	if err != nil || !conflict.Reservation || conflict.Job == nil || conflict.Job.ID != job.ID {
-		t.Fatalf("migration lost reservation: %+v err=%v", conflict, err)
+	var reservationJobID int64
+	if err := database.db.QueryRowContext(ctx, "SELECT job_id FROM booking_reservations WHERE profile_id=? AND target_date=?", booking.ProfileID, booking.TargetDate).Scan(&reservationJobID); err != nil || reservationJobID != job.ID {
+		t.Fatalf("migration lost reservation: job=%d err=%v", reservationJobID, err)
 	}
+
 }

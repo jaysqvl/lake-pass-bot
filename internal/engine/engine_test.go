@@ -18,6 +18,7 @@ import (
 	"github.com/jaysqvl/lake-pass-bot/internal/model"
 	"github.com/jaysqvl/lake-pass-bot/internal/scheduler"
 	"github.com/jaysqvl/lake-pass-bot/internal/store"
+	"github.com/jaysqvl/lake-pass-bot/internal/testutil/bookingfixture"
 )
 
 type engineTestFixture struct {
@@ -64,7 +65,7 @@ func newEngineTestFixture(t *testing.T) engineTestFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	booking, err := resources.CreateBookingRequest(ctx, model.BookingRequest{
+	booking, err := bookingfixture.Create(ctx, databasePath, resources, model.BookingRequest{
 		Name: "Example booking", ProfileID: profile.ID, Enabled: true,
 		TargetDate: "2031-01-15", Timezone: "UTC", ReleaseTime: "07:00",
 		PrepMinutesBefore: 30, AuthDeadlineMinutesBefore: 5, PollDeadlineSeconds: 120,
@@ -91,10 +92,6 @@ func newEngineTestFixture(t *testing.T) engineTestFixture {
 func TestQueueBookingRejectsExplicitInvalidMode(t *testing.T) {
 	fixture := newEngineTestFixture(t)
 	invalid := model.RunMode("manul")
-	if _, err := fixture.engine.QueueBooking(context.Background(), fixture.user.ID,
-		fixture.booking.ID, model.CommandBook, invalid); err == nil || !strings.Contains(err.Error(), "manual or auto") {
-		t.Fatalf("user queue invalid mode error = %v", err)
-	}
 	if _, err := fixture.engine.SystemQueueBooking(context.Background(), fixture.booking.ID,
 		model.CommandBook, invalid); err == nil || !strings.Contains(err.Error(), "manual or auto") {
 		t.Fatalf("system queue invalid mode error = %v", err)
@@ -104,75 +101,34 @@ func TestQueueBookingRejectsExplicitInvalidMode(t *testing.T) {
 	}
 }
 
-func TestUserAndSystemQueuePathsApplyTheSameRunModePolicy(t *testing.T) {
+func TestCLIQueueRunModePolicy(t *testing.T) {
 	fixture := newEngineTestFixture(t)
 	ctx := context.Background()
 	for _, test := range []struct {
-		command model.JobCommand
-		mode    model.RunMode
-		want    model.RunMode
+		command    model.JobCommand
+		mode, want model.RunMode
 	}{
 		{model.CommandAuthCheck, model.RunModeAuto, model.RunModeManual},
 		{model.CommandDryRun, model.RunModeAuto, model.RunModeDryRun},
 		{model.CommandBook, "", model.RunModeAuto},
 		{model.CommandBook, model.RunModeManual, model.RunModeManual},
 	} {
-		for _, system := range []bool{false, true} {
-			var job model.Job
-			var err error
-			if system {
-				job, err = fixture.engine.SystemQueueBooking(ctx, fixture.booking.ID, test.command, test.mode)
-			} else {
-				job, err = fixture.engine.QueueBooking(ctx, fixture.user.ID, fixture.booking.ID, test.command, test.mode)
-			}
-			if err != nil || job.RunMode != test.want {
-				t.Fatalf("system=%v command=%s requested=%s job=%+v err=%v", system, test.command, test.mode, job, err)
-			}
-			if err := fixture.resources.RequestJobCancellation(ctx, job.ID); err != nil {
-				t.Fatal(err)
-			}
+		job, err := fixture.engine.SystemQueueBooking(ctx, fixture.booking.ID, test.command, test.mode)
+		if err != nil || job.RunMode != test.want {
+			t.Fatalf("command=%s mode=%s job=%+v err=%v", test.command, test.mode, job, err)
+		}
+		if err := fixture.resources.RequestJobCancellation(ctx, job.ID); err != nil {
+			t.Fatal(err)
 		}
 	}
 }
 
-func TestUserAndSystemQueuePathsSharePendingDeduplication(t *testing.T) {
-	fixture := newEngineTestFixture(t)
-	ctx := context.Background()
-	first, err := fixture.engine.QueueBooking(ctx, fixture.user.ID,
-		fixture.booking.ID, model.CommandDryRun, model.RunModeDryRun)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fixture.engine.SystemQueueBooking(ctx, fixture.booking.ID,
-		model.CommandDryRun, model.RunModeDryRun); !errors.Is(err, store.ErrConflict) {
-		t.Fatalf("system duplicate error=%v", err)
-	}
-	if err := fixture.resources.RequestJobCancellation(ctx, first.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fixture.engine.SystemQueueBooking(ctx, fixture.booking.ID,
-		model.CommandDryRun, model.RunModeDryRun); err != nil {
-		t.Fatalf("system queue after terminal job: %v", err)
-	}
-	if _, err := fixture.engine.QueueBooking(ctx, fixture.user.ID,
-		fixture.booking.ID, model.CommandDryRun, model.RunModeDryRun); !errors.Is(err, store.ErrConflict) {
-		t.Fatalf("user duplicate error=%v", err)
-	}
-}
-
-func TestSchedulerCannotRepeatManualBookingAcrossModesOrOutcomes(t *testing.T) {
+func TestCLIAndNewBookingsShareReservations(t *testing.T) {
 	for _, status := range []model.JobStatus{model.JobQueued, model.JobSucceeded, model.JobOutcomeUnknown} {
 		t.Run(string(status), func(t *testing.T) {
 			fixture := newEngineTestFixture(t)
 			ctx := context.Background()
-			booking := fixture.booking
-			booking.ScheduleEnabled = true
-			booking.ConfirmationMode = model.RunModeAuto
-			booking, err := fixture.resources.UpdateBookingRequest(ctx, booking)
-			if err != nil {
-				t.Fatal(err)
-			}
-			first, err := fixture.engine.QueueBooking(ctx, fixture.user.ID, booking.ID, model.CommandBook, model.RunModeManual)
+			first, err := fixture.engine.QueueLakeBooking(ctx, fixture.user.ID, fixture.booking)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -180,23 +136,26 @@ func TestSchedulerCannotRepeatManualBookingAcrossModesOrOutcomes(t *testing.T) {
 				if _, err := fixture.store.SystemTransitionJob(ctx, first.ID, []model.JobStatus{model.JobQueued}, model.JobRunning, store.JobTransition{}); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := fixture.store.SystemTransitionJob(ctx, first.ID, []model.JobStatus{model.JobRunning}, status,
-					store.JobTransition{ConfirmationStarted: true}); err != nil {
+				if _, err := fixture.store.SystemTransitionJob(ctx, first.ID, []model.JobStatus{model.JobRunning}, status, store.JobTransition{ConfirmationStarted: true}); err != nil {
 					t.Fatal(err)
 				}
 			}
-			window, err := scheduler.WindowFor(booking)
-			if err != nil {
-				t.Fatal(err)
+			if _, err := fixture.engine.SystemQueueBooking(ctx, fixture.booking.ID, model.CommandBook, model.RunModeManual); !errors.Is(err, store.ErrConflict) {
+				t.Fatalf("CLI bypassed %s reservation: %v", status, err)
 			}
-			fixture.engine.queueScheduled(ctx, window.ReleaseAt)
-			fixture.engine.queueScheduled(ctx, window.ReleaseAt.Add(15*time.Second))
-			jobs, err := fixture.resources.ListJobs(ctx, 10)
-			if err != nil || len(jobs) != 1 || jobs[0].ID != first.ID || jobs[0].Status != status {
-				t.Fatalf("scheduler duplicated %s manual booking: jobs=%+v err=%v", status, jobs, err)
+			if _, err := fixture.engine.QueueLakeBooking(ctx, fixture.user.ID, fixture.booking); !errors.Is(err, store.ErrConflict) {
+				t.Fatalf("new booking bypassed %s reservation: %v", status, err)
 			}
 		})
 	}
+}
+
+// Historical records are fixture data, not a supported app editing API.
+func updateLegacyEngineBooking(ctx context.Context, fixture engineTestFixture, request model.BookingRequest) (model.BookingRequest, error) {
+	return bookingfixture.Update(ctx, fixture.databasePath, fixture.resources, request)
+}
+func removeUnusedLegacyFixture(ctx context.Context, fixture engineTestFixture) error {
+	return bookingfixture.Remove(ctx, fixture.databasePath, fixture.resources, fixture.booking.ID)
 }
 
 func TestBookAdmissionWaitsForTheBoundedPrepWindowAndCarriesExpiry(t *testing.T) {

@@ -116,9 +116,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /bookings", s.authenticated(s.lakeBookingsPage))
 	s.mux.HandleFunc("GET /bookings/new", s.authenticated(s.lakeBookingNew))
 	s.mux.HandleFunc("POST /bookings/new", s.authenticated(s.lakeBookingCreate))
-	s.mux.HandleFunc("GET /bookings/{id}", s.authenticated(s.savedBookingPage))
-	s.mux.HandleFunc("POST /bookings/{id}/delete", s.authenticated(s.savedBookingDelete))
-	s.mux.HandleFunc("POST /bookings/{id}/run", s.authenticated(s.bookingRun))
 
 	s.mux.HandleFunc("GET /jobs", s.authenticated(s.jobs))
 	s.mux.HandleFunc("GET /jobs/{id}", s.authenticated(s.job))

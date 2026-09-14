@@ -22,7 +22,7 @@ major versions. Publishing a release does not restart your container. You decide
 when to install it:
 
 1. Read the release notes for configuration or database changes. Wait for active
-   jobs to finish and keep auto-queueing disabled during the update.
+   jobs to finish before the update.
 2. In Portainer, open **Stacks**, select the existing Lake Pass Bot stack, and open
    **Editor**. Apply any required Compose or environment changes there.
 3. Choose **Update the stack** and enable **Re-pull image and redeploy** so Docker
@@ -81,9 +81,11 @@ Optional settings retain their legacy fallbacks. The template uses:
   configuration. CSRF and browser-origin checks stay enabled.
 - `MAX_CONCURRENT_JOBS`: preserve your chosen concurrency.
 
-The template keeps `SCHEDULES_ENABLED=false`. Complete the
-[live booking tests](live-testing.md) before deliberately enabling unattended
-scheduling in your saved stack. Updating an image does not itself enable it.
+Each booking job is explicitly created with **Book**. The retired
+`SCHEDULES_ENABLED` setting is ignored if it remains in an older stack. Schema
+14 disables automatic queueing flags on legacy saved requests, preserving all
+other booking inputs, existing jobs, history, and reservation records. Already
+queued jobs retain their saved timing; cancel them from Jobs if needed.
 
 The optional `LAKE_PASS_KEY_DIRECTORY_PATH` must refer to an existing directory
 containing the original `master.key`, owned by UID/GID 1001 with mode 0400 or

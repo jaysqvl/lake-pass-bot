@@ -10,6 +10,7 @@ import (
 
 	"github.com/jaysqvl/lake-pass-bot/internal/model"
 	"github.com/jaysqvl/lake-pass-bot/internal/store"
+	"github.com/jaysqvl/lake-pass-bot/internal/testutil/bookingfixture"
 )
 
 func TestDeletedMemberStorageReconciliationIsOwnerIsolated(t *testing.T) {
@@ -76,7 +77,7 @@ func TestDeletedMemberStorageReconciliationIsOwnerIsolated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	booking, err := memberStore.CreateBookingRequest(ctx, model.BookingRequest{
+	booking, err := bookingfixture.Create(ctx, fixture.databasePath, memberStore, model.BookingRequest{
 		Name: "Deletion cleanup booking", ProfileID: memberProfile.ID, Enabled: true,
 		TargetDate: "2031-01-15", Timezone: "UTC", ReleaseTime: "07:00",
 		PrepMinutesBefore: 30, AuthDeadlineMinutesBefore: 5, PollDeadlineSeconds: 120,

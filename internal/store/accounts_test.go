@@ -175,7 +175,7 @@ func TestDeleteMemberRequiresDisabledQuiescentAccountAndReleasesOwnedState(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	booking, err := resources.CreateBookingRequest(ctx, model.BookingRequest{
+	booking, err := resources.createLegacyBookingFixture(ctx, model.BookingRequest{
 		Name: "Member booking", ProfileID: profile.ID, Enabled: true,
 		TargetDate: "2031-01-15", Timezone: "UTC", ReleaseTime: "07:00",
 		PrepMinutesBefore: 30, AuthDeadlineMinutesBefore: 5, PollDeadlineSeconds: 120,
@@ -401,7 +401,7 @@ func TestDisablingMemberRevokesScheduledQueuedAndActiveWork(t *testing.T) {
 	database, _, memberID := ownershipStore(t)
 	_, _, booking := createOwnedResources(t, database, memberID, "disabled-member")
 	booking.ScheduleEnabled = true
-	booking, err := database.ForUser(memberID).UpdateBookingRequest(ctx, booking)
+	booking, err := database.ForUser(memberID).updateLegacyBookingFixture(ctx, booking)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,15 +462,7 @@ func TestDisablingMemberRevokesScheduledQueuedAndActiveWork(t *testing.T) {
 		t.Fatalf("disabled enqueue error=%v", err)
 	}
 
-	// Defense in depth: even host-side SQL cannot make a disabled account's
-	// schedule or queued job executable without re-enabling the account.
-	if _, err := database.db.ExecContext(ctx,
-		"UPDATE booking_requests SET schedule_enabled = 1 WHERE id = ?", bookingID); err != nil {
-		t.Fatal(err)
-	}
-	if scheduled, err := database.SystemListScheduledBookingRequests(ctx); err != nil || len(scheduled) != 0 {
-		t.Fatalf("disabled scheduled requests=%+v err=%v", scheduled, err)
-	}
+	// Host-side SQL cannot make a disabled account's queued job executable.
 	if _, err := database.db.ExecContext(ctx,
 		"UPDATE jobs SET status = 'queued', cancel_requested = 0, finished_at = NULL WHERE id = ?", queued.ID); err != nil {
 		t.Fatal(err)
@@ -505,7 +497,7 @@ func TestTerminalTransitionsAtomicallyRespectCommittedRevocation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		booking, err := resources.CreateBookingRequest(ctx, model.BookingRequest{
+		booking, err := resources.createLegacyBookingFixture(ctx, model.BookingRequest{
 			Name: unique + " booking", ProfileID: profile.ID, Enabled: true,
 			TargetDate: "2031-01-15", Timezone: "UTC", ReleaseTime: "07:00",
 			PrepMinutesBefore: 30, AuthDeadlineMinutesBefore: 5, PollDeadlineSeconds: 120,

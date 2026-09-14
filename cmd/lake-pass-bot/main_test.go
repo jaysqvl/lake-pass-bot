@@ -24,7 +24,6 @@ func TestUnknownCommandDoesNotInitializeAppdata(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "uninitialized")
 	t.Setenv("APPDATA_DIR", directory)
 	t.Setenv("MAX_CONCURRENT_JOBS", "1")
-	t.Setenv("SCHEDULES_ENABLED", "false")
 	t.Setenv("BLUEBUBBLES_URL", "http://bluebubbles.example:1234")
 	if err := run(context.Background(), []string{"typo"}); err == nil || err.Error() != usageError().Error() {
 		t.Fatalf("unknown command: %v", err)

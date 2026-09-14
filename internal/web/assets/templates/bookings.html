@@ -16,10 +16,4 @@
   </article>
   {{end}}
 </div>
-{{if .Saved}}
-<section class="saved-requests">
-  <div class="section-head"><div><h2>Saved requests</h2><p>Review or remove your previously saved visits. Job history is kept.</p></div></div>
-  <div class="resource-list">{{range .Saved}}{{template "resource-card" .}}{{end}}</div>
-</section>
-{{end}}
 {{end}}

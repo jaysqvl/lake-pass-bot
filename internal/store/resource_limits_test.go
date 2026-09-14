@@ -119,7 +119,7 @@ func TestDurableResourceCountsAreBoundedAcrossDatabaseHandles(t *testing.T) {
 	}
 	var firstBooking model.BookingRequest
 	for index := 0; index < MaxBookingRequestsPerUser; index++ {
-		booking, err := database.ForUser(user.ID).CreateBookingRequest(ctx, bookingInput(fmt.Sprintf("booking-%02d", index)))
+		booking, err := database.ForUser(user.ID).createLegacyBookingFixture(ctx, bookingInput(fmt.Sprintf("booking-%02d", index)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,13 +127,13 @@ func TestDurableResourceCountsAreBoundedAcrossDatabaseHandles(t *testing.T) {
 			firstBooking = booking
 		}
 	}
-	if _, err := peer.ForUser(user.ID).CreateBookingRequest(ctx, bookingInput("booking-over-limit")); !errors.Is(err, ErrResourceLimit) {
+	if _, err := peer.ForUser(user.ID).createLegacyBookingFixture(ctx, bookingInput("booking-over-limit")); !errors.Is(err, ErrResourceLimit) {
 		t.Fatalf("booking limit error=%v", err)
 	}
-	if err := database.ForUser(user.ID).DeleteBookingRequest(ctx, firstBooking.ID); err != nil {
+	if err := database.ForUser(user.ID).removeLegacyBookingFixture(ctx, firstBooking.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := peer.ForUser(user.ID).CreateBookingRequest(ctx, bookingInput("booking-replacement")); err != nil {
+	if _, err := peer.ForUser(user.ID).createLegacyBookingFixture(ctx, bookingInput("booking-replacement")); err != nil {
 		t.Fatalf("booking slot was not reusable: %v", err)
 	}
 }

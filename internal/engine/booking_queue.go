@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"time"
 
@@ -18,40 +17,6 @@ var (
 	ErrBookingDatePassed  = errors.New("the booking target date has passed")
 	ErrBookingWindowEnded = errors.New("the booking release window has ended")
 )
-
-func (e *Engine) QueueBooking(ctx context.Context, userID, bookingID int64, command model.JobCommand, mode model.RunMode) (model.Job, error) {
-	resources := e.store.ForUser(userID)
-	booking, err := resources.GetBookingRequest(ctx, bookingID)
-	if err != nil {
-		return model.Job{}, err
-	}
-	if err := booking.ValidateForOrigins(e.config.YodelOrigins); err != nil {
-		return model.Job{}, err
-	}
-	params, err := bookingEnqueueParams(booking, command, mode, time.Now().UTC())
-	if err != nil {
-		return model.Job{}, err
-	}
-	return resources.EnqueueJob(ctx, params)
-}
-
-// QueueBookingNow checks currently available passes and always stops for the
-// operator's approval before final confirmation.
-func (e *Engine) QueueBookingNow(ctx context.Context, userID, bookingID int64) (model.Job, error) {
-	resources := e.store.ForUser(userID)
-	booking, err := resources.GetBookingRequest(ctx, bookingID)
-	if err != nil {
-		return model.Job{}, err
-	}
-	if err := booking.ValidateForOrigins(e.config.YodelOrigins); err != nil {
-		return model.Job{}, err
-	}
-	params, err := immediateBookingEnqueueParams(booking, time.Now().UTC())
-	if err != nil {
-		return model.Job{}, err
-	}
-	return resources.EnqueueJob(ctx, params)
-}
 
 func immediateBookingEnqueueParams(booking model.BookingRequest, now time.Time) (store.EnqueueJobParams, error) {
 	if err := validateImmediateBookingDate(booking, now); err != nil {
@@ -128,7 +93,7 @@ func bookingStartTiming(job model.Job, booking model.BookingRequest, now time.Ti
 	return timing, nil
 }
 
-// SystemQueueBooking supports the host-authorized CLI and scheduler path. The
+// SystemQueueBooking supports the host-authorized CLI replay path. The
 // persisted owner is derived from the booking request, never supplied here.
 func (e *Engine) SystemQueueBooking(ctx context.Context, bookingID int64, command model.JobCommand, mode model.RunMode) (model.Job, error) {
 	booking, err := e.store.SystemGetBookingRequest(ctx, bookingID)
@@ -188,46 +153,4 @@ func bookingEnqueueParams(
 	expiresAt := window.PollEndsAt.UTC()
 	params.ExpiresAt = &expiresAt
 	return params, nil
-}
-
-func (e *Engine) scheduleLoop() {
-	defer e.wg.Done()
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-	for {
-		e.queueScheduled(e.ctx, time.Now())
-		select {
-		case <-e.ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}
-
-func (e *Engine) queueScheduled(ctx context.Context, now time.Time) {
-	requests, err := e.store.SystemListScheduledBookingRequests(ctx)
-	if err != nil {
-		slog.Error("scheduled booking scan failed", "error", err)
-		return
-	}
-	for _, request := range requests {
-		if err := request.ValidateForOrigins(e.config.YodelOrigins); err != nil {
-			slog.Warn("scheduled booking has an invalid Yodel origin policy", "booking_id", request.ID)
-			continue
-		}
-		window, err := scheduler.WindowFor(request)
-		if err != nil || !scheduler.ShouldQueue(now, window) {
-			continue
-		}
-		_, err = e.store.SystemEnqueueJob(ctx, store.EnqueueJobParams{
-			BookingRequestID: &request.ID, Command: model.CommandBook,
-			RunMode: request.ConfirmationMode, DueAt: now.UTC(), ExpiresAt: &window.PollEndsAt,
-			DedupKey: scheduler.DedupKey(request),
-		})
-		if err != nil && !errors.Is(err, store.ErrConflict) {
-			slog.Error("scheduled booking could not be queued", "booking_id", request.ID, "error", err)
-		} else if err == nil {
-			slog.Info("scheduled booking queued", "booking_id", request.ID)
-		}
-	}
 }

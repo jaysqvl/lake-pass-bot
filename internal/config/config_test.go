@@ -13,7 +13,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.MaxConcurrentJobs != 2 || cfg.ListenAddress != ":8080" || cfg.SchedulesEnabled {
+	if cfg.MaxConcurrentJobs != 2 || cfg.ListenAddress != ":8080" {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 	if cfg.HostCheckEnabled || cfg.HostCheckConfigured {
@@ -199,7 +199,7 @@ func TestLoadRejectsInvalidAllowedHost(t *testing.T) {
 func isolateEnvironment(t *testing.T) {
 	t.Helper()
 	for _, name := range []string{
-		"LAKE_PASS_LISTEN", "MAX_CONCURRENT_JOBS", "SCHEDULES_ENABLED",
+		"LAKE_PASS_LISTEN", "MAX_CONCURRENT_JOBS",
 		"LAKE_PASS_DEBUG", "LAKE_PASS_LOG_LEVEL", "LAKE_PASS_PYTHON",
 		"LAKE_PASS_ACTIONS_MODULE", "LAKE_PASS_BROWSER_EXECUTABLE", "BLUEBUBBLES_URL", "LAKE_PASS_BLUEBUBBLES_ENDPOINTS", "LAKE_PASS_ALLOWED_ORIGINS",
 		"LAKE_PASS_YODEL_ORIGINS", "LAKE_PASS_ALLOWED_HOSTS", "LAKE_PASS_SETUP_TOKEN", "LAKE_PASS_MASTER_KEY_FILE",

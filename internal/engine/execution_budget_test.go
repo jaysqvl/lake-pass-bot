@@ -122,7 +122,7 @@ func TestExecutionWatchdogClassifiesRealWorkerAndPreservesReservation(t *testing
 				if finished.ConfirmationStartedAt == nil {
 					t.Fatal("missing durable confirmation barrier")
 				}
-				if _, err := fixture.engine.QueueBookingNow(context.Background(), fixture.user.ID, fixture.booking.ID); !errors.Is(err, store.ErrConflict) {
+				if _, err := fixture.engine.QueueLakeBooking(context.Background(), fixture.user.ID, fixture.booking); !errors.Is(err, store.ErrConflict) {
 					t.Fatalf("reservation released after confirmation: %v", err)
 				}
 			}
@@ -191,11 +191,11 @@ for line in sys.stdin:
 	if command == model.CommandBook {
 		booking := fixture.booking
 		booking.TargetDate = time.Now().UTC().Format(time.DateOnly)
-		fixture.booking, err = fixture.resources.UpdateBookingRequest(ctx, booking)
+		fixture.booking, err = updateLegacyEngineBooking(ctx, *fixture, booking)
 		if err != nil {
 			t.Fatal(err)
 		}
-		job, err = fixture.engine.QueueBookingNow(ctx, fixture.user.ID, booking.ID)
+		job, err = fixture.engine.QueueLakeBooking(ctx, fixture.user.ID, booking)
 	} else if command == model.CommandDryRun {
 		bookingID := fixture.booking.ID
 		job, err = fixture.resources.EnqueueJob(ctx, store.EnqueueJobParams{BookingRequestID: &bookingID, Command: command, RunMode: model.RunModeDryRun})

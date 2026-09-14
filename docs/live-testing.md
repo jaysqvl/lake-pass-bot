@@ -33,11 +33,10 @@ For a future release, **Book** captures the current preparation, authentication,
 and release window together with the global manual or automatic confirmation
 preference. A separate release-time test is needed to verify session warming and
 release polling; an immediate checkout test does not exercise that timing.
-Keep unattended scheduling disabled while testing. `SCHEDULES_ENABLED=false`
-prevents automatic creation of jobs from older saved requests. Jobs explicitly
-created with **Book** still run, including automatic final confirmation for
-future release jobs when selected in Settings. Use **Cancel job** on the job
-page to stop queued work. Changing defaults does not change an existing job.
+Keep **Manual approval** selected while testing. Each press of **Book** creates
+a job explicitly, including automatic confirmation for future releases when
+selected in Settings. Use **Cancel job** on the job page to stop queued work.
+Changing defaults does not change an existing job.
 
 Check the current season dates and release rules in the
 [BC Hydro reservation rules](https://www.bchydro.com/community/recreation_areas/buntzen_lake.html)
@@ -47,8 +46,8 @@ Cancel an unused test pass through its reservation confirmation.
 ## Advanced checks for an existing request
 
 The CLI retains sign-in checks and dry runs for an existing booking request ID.
-For an older saved request, its ID appears in the request page URL. Replace `1`
-with that ID and run against the same appdata as the service:
+These are operator diagnostics using a known request ID from the job record.
+Replace `1` with that ID and run against the same appdata as the service:
 
 ```bash
 docker compose exec lake-pass-bot lake-pass-bot auth-check --booking 1
@@ -61,7 +60,6 @@ advanced actions use the request's saved inputs; the web **Book** form creates a
 new visit from current lake and account settings. See
 [Common commands](../README.md#common-commands) for the CLI's booking modes.
 
-Older requests can be removed from **Bookings → Saved requests** after pending
-jobs finish or are cancelled. Deleting a request preserves completed job
-history and reservation records; it does not release an uncertain or confirmed
-account/date reservation or cancel an issued Yodel pass.
+The retired saved-request screens are no longer available. Existing job history
+and reservation records are preserved. Removing the old UI does not release an
+uncertain or confirmed account/date reservation or cancel an issued Yodel pass.

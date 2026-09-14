@@ -24,7 +24,6 @@ import (
 func runServe(parent context.Context, cfg config.Config, database *store.Store) error {
 	slog.Info("control plane starting",
 		"listen", cfg.ListenAddress,
-		"schedules_enabled", cfg.SchedulesEnabled,
 		"max_concurrent_jobs", cfg.MaxConcurrentJobs,
 		"log_level", cfg.EffectiveLogLevel(),
 	)

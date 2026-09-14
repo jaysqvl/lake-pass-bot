@@ -140,11 +140,12 @@ func TestSettingsDoNotChangeSavedBookingsProfilesOrJobs(t *testing.T) {
 		t.Fatalf("changing account defaults changed profile: %+v, %v", gotProfile, err)
 	}
 	updated := account.ApplyToBooking(settings.ApplyTo(booking))
-	if _, err := resources.UpdateBookingRequest(ctx, updated); !errors.Is(err, ErrConflict) {
-		t.Fatalf("active job guard was bypassed: %v", err)
-	}
 	updated.ID, updated.Name = 0, "new visit with lake defaults"
-	created, err := resources.CreateBookingRequest(ctx, updated)
+	newJob, err := resources.EnqueueBookingRequest(ctx, updated, EnqueueJobParams{Command: model.CommandDryRun})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := resources.GetBookingRequest(ctx, *newJob.BookingRequestID)
 	if err != nil || created.ReleaseDaysBefore == nil || created.EffectiveReleaseDaysBefore() != 0 || created.ReleaseTime != "09:15" ||
 		created.PrepMinutesBefore != 45 || created.AuthDeadlineMinutesBefore != 10 || created.PollDeadlineSeconds != 240 ||
 		created.PollMinSeconds != 2.2 || created.PollMaxSeconds != 4.4 {
@@ -207,21 +208,21 @@ func TestSharedProfileUsesProviderCompatibilityAndOwnerScope(t *testing.T) {
 	if _, err := database.db.ExecContext(ctx, `UPDATE profiles SET lake_id = 'previous-lake' WHERE id = ?`, profile.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.ForUser(firstID).UpdateBookingRequest(ctx, booking); err != nil {
+	if _, err := database.ForUser(firstID).EnqueueBookingRequest(ctx, booking, EnqueueJobParams{Command: model.CommandDryRun}); err != nil {
 		t.Fatalf("deprecated lake metadata blocked a shared provider identity: %v", err)
 	}
 	if _, err := database.db.ExecContext(ctx, `UPDATE profiles SET provider_id = 'unsupported-provider' WHERE id = ?`, profile.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.ForUser(firstID).UpdateBookingRequest(ctx, booking); !errors.Is(err, ErrConflict) {
+	if _, err := database.ForUser(firstID).EnqueueBookingRequest(ctx, booking, EnqueueJobParams{Command: model.CommandDryRun}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("incompatible provider accepted: %v", err)
 	}
 	booking.ProfileID = otherProfile.ID
-	if _, err := database.ForUser(firstID).UpdateBookingRequest(ctx, booking); !errors.Is(err, ErrNotFound) {
+	if _, err := database.ForUser(firstID).EnqueueBookingRequest(ctx, booking, EnqueueJobParams{Command: model.CommandDryRun}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-owner profile update was accepted: %v", err)
 	}
 	booking.ID, booking.Name = 0, "cross-owner profile"
-	if _, err := database.ForUser(firstID).CreateBookingRequest(ctx, booking); !errors.Is(err, ErrNotFound) {
+	if _, err := database.ForUser(firstID).EnqueueBookingRequest(ctx, booking, EnqueueJobParams{Command: model.CommandDryRun}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-owner profile creation was accepted: %v", err)
 	}
 }

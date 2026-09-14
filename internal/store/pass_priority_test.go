@@ -23,37 +23,35 @@ func TestBookingPassPriorityRoundTripsAndSynchronizesLegacyFlags(t *testing.T) {
 	input.LoginProbeURL = ""
 	input.HalfDayPassURL = "https://example.test/half"
 	input.PreferredPasses = []model.PassType{model.PassMorning}
-	created, err := database.CreateBookingRequest(ctx, testUserID, input)
+	job, err := database.ForUser(testUserID).EnqueueBookingRequest(ctx, input, EnqueueJobParams{Command: model.CommandDryRun})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(created.PassOrder(), input.PreferredPasses) || created.CheckAllDay || created.CheckAfternoon || !created.CheckMorning {
-		t.Fatalf("created order and legacy flags disagree: %+v", created)
+	created, err := database.GetBookingRequest(ctx, testUserID, *job.BookingRequestID)
+	if err != nil || !slices.Equal(created.PassOrder(), input.PreferredPasses) || created.CheckAllDay || created.CheckAfternoon || !created.CheckMorning {
+		t.Fatalf("snapshot pass flags disagree: %+v %v", created, err)
 	}
 	if created.LoginProbeURL != profile.LoginProbeURL {
-		t.Fatal("omitted legacy login URL was not populated from the owned profile")
+		t.Fatal("omitted legacy URL not populated")
 	}
-	created.PreferredPasses = []model.PassType{model.PassMorning, model.PassAllDay, model.PassAfternoon}
-	created.LoginProbeURL = ""
-	updated, err := database.UpdateBookingRequest(ctx, testUserID, created)
+	input.PreferredPasses = []model.PassType{model.PassMorning, model.PassAllDay, model.PassAfternoon}
+	next, err := database.ForUser(testUserID).EnqueueBookingRequest(ctx, input, EnqueueJobParams{Command: model.CommandDryRun})
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := database.SystemGetBookingRequest(ctx, updated.ID)
-	if err != nil || !slices.Equal(loaded.PassOrder(), created.PreferredPasses) || !loaded.CheckAllDay || !loaded.CheckAfternoon || !loaded.CheckMorning {
-		t.Fatalf("saved custom order=%+v err=%v", loaded, err)
+	loaded, err := database.SystemGetBookingRequest(ctx, *next.BookingRequestID)
+	if err != nil || !slices.Equal(loaded.PassOrder(), input.PreferredPasses) || !loaded.CheckAllDay || !loaded.CheckAfternoon || !loaded.CheckMorning {
+		t.Fatalf("snapshot custom order: %+v %v", loaded, err)
 	}
-	if loaded.LoginProbeURL != profile.LoginProbeURL {
-		t.Fatal("update cleared the retained historical login URL")
+	input.PreferredPasses = []model.PassType{model.PassMorning, model.PassMorning}
+	if _, err := database.ForUser(testUserID).EnqueueBookingRequest(ctx, input, EnqueueJobParams{Command: model.CommandDryRun}); err == nil {
+		t.Fatal("duplicate priority saved")
 	}
-	updated.PreferredPasses = []model.PassType{model.PassMorning, model.PassMorning}
-	if _, err := database.UpdateBookingRequest(ctx, testUserID, updated); err == nil {
-		t.Fatal("duplicate priority was saved")
-	}
-	unchanged, err := database.GetBookingRequest(ctx, testUserID, updated.ID)
+	unchanged, err := database.GetBookingRequest(ctx, testUserID, created.ID)
 	if err != nil || !slices.Equal(unchanged.PassOrder(), created.PreferredPasses) {
-		t.Fatalf("rejected update changed the order: %+v err=%v", unchanged, err)
+		t.Fatalf("later submission changed earlier order: %+v %v", unchanged, err)
 	}
+
 }
 
 func TestPassOrderMigrationPreservesEveryLegacySelection(t *testing.T) {

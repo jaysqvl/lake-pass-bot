@@ -66,7 +66,7 @@ func TestLakeBookingAccountOwnershipIdentityAndDeletion(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(retained, saved) {
 		t.Fatalf("failed writes or disabling lost the explicit choice: %+v, %v", retained, err)
 	}
-	if err := resources.DeleteBookingRequest(ctx, booking.ID); err != nil {
+	if err := resources.removeLegacyBookingFixture(ctx, booking.ID); err != nil {
 		t.Fatal(err)
 	}
 	// Another eligible identity must not become the default by deleting the

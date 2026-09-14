@@ -72,28 +72,12 @@ func (u UserStore) DeleteProfile(ctx context.Context, id int64) error {
 	return u.store.DeleteProfile(ctx, u.userID, id)
 }
 
-func (u UserStore) CreateBookingRequest(ctx context.Context, request model.BookingRequest) (model.BookingRequest, error) {
-	return u.store.CreateBookingRequest(ctx, u.userID, request)
-}
-
-func (u UserStore) UpdateBookingRequest(ctx context.Context, request model.BookingRequest) (model.BookingRequest, error) {
-	return u.store.UpdateBookingRequest(ctx, u.userID, request)
-}
-
 func (u UserStore) GetBookingRequest(ctx context.Context, id int64) (model.BookingRequest, error) {
 	return u.store.GetBookingRequest(ctx, u.userID, id)
 }
 
 func (u UserStore) ListBookingRequests(ctx context.Context) ([]model.BookingRequest, error) {
 	return u.store.ListBookingRequests(ctx, u.userID)
-}
-
-func (u UserStore) ListSavedBookingRequests(ctx context.Context) ([]model.BookingRequest, error) {
-	return u.store.ListSavedBookingRequests(ctx, u.userID)
-}
-
-func (u UserStore) DeleteBookingRequest(ctx context.Context, id int64) error {
-	return u.store.DeleteBookingRequest(ctx, u.userID, id)
 }
 
 func (u UserStore) EnqueueJob(ctx context.Context, params EnqueueJobParams) (model.Job, error) {
@@ -114,10 +98,6 @@ func (u UserStore) ListJobs(ctx context.Context, limit int) ([]model.Job, error)
 
 func (u UserStore) ListPendingBookingJobs(ctx context.Context) ([]model.Job, error) {
 	return u.store.ListPendingBookingJobs(ctx, u.userID)
-}
-
-func (u UserStore) BookingConflict(ctx context.Context, bookingID int64, command model.JobCommand) (BookingConflict, error) {
-	return u.store.BookingConflict(ctx, u.userID, bookingID, command)
 }
 
 func (u UserStore) RequestJobCancellation(ctx context.Context, id int64) error {

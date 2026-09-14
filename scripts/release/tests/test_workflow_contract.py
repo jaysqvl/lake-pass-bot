@@ -43,12 +43,11 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("RELEASE_DIGEST: ${{ needs.publish.outputs.image_digest }}", latest)
         self.assertIn("run: python3 scripts/release/promote_latest.py", latest)
 
-    def test_compose_retains_container_identity_logs_and_schedule_default(self) -> None:
+    def test_compose_retains_container_identity_and_logs(self) -> None:
         portainer = (ROOT / "deploy/portainer.yml").read_text()
         self.assertEqual(portainer.count("    container_name: lake-pass-bot\n"), 1)
         self.assertIn('      LAKE_PASS_LOG_LEVEL: "${LAKE_PASS_LOG_LEVEL-${BUNTZEN_LOG_LEVEL:-info}}"', portainer)
         self.assertIn('      LAKE_PASS_DEBUG: "${LAKE_PASS_DEBUG-${BUNTZEN_DEBUG:-false}}"', portainer)
-        self.assertIn('      SCHEDULES_ENABLED: "false"', portainer)
         for path in ("deploy/portainer.yml", "docker-compose.yml"):
             compose = (ROOT / path).read_text()
             with self.subTest(path=path):

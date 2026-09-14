@@ -6,21 +6,18 @@ import (
 	"sort"
 	"time"
 
-	"github.com/jaysqvl/lake-pass-bot/internal/destinations"
 	"github.com/jaysqvl/lake-pass-bot/internal/model"
 )
 
 type dashboardData struct {
 	BaseData
-	BookingCount     int
-	SchedulesEnabled bool
-	AutoQueueNotice  string
-	Jobs             []jobRow
-	Connections      []lakeConnection
-	Bookings         []dashboardBooking
+	BookingCount int
+	Jobs         []jobRow
+	Connections  []lakeConnection
+	Bookings     []dashboardBooking
 }
 
-type dashboardBooking struct{ Name, URL, Date, Lake string }
+type dashboardBooking struct{ Name, URL, Date string }
 
 type dashboardCard struct {
 	listCard
@@ -28,10 +25,6 @@ type dashboardCard struct {
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
-	s.renderDashboard(w, r, "")
-}
-
-func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, problem string) {
 	connections, err := s.lakeConnections(r)
 	if err != nil {
 		s.internal(w)
@@ -60,51 +53,46 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, problem
 	if len(recent) > 10 {
 		recent = recent[:10]
 	}
-	data := dashboardData{BaseData: base(r, "Home"), SchedulesEnabled: s.config.SchedulesEnabled, AutoQueueNotice: autoQueueOffNotice, Jobs: s.jobRows(r.Context(), userStore, recent), Connections: connections}
-	visits := make(map[int64]model.Job)
-	for _, job := range jobs {
-		if job.BookingRequestID != nil && job.Command == model.CommandBook && (!job.Status.Terminal() || job.Status == model.JobSucceeded) {
-			visits[*job.BookingRequestID] = job
-		}
+	visits := upcomingVisits(bookings, jobs, time.Now())
+	data := dashboardData{
+		BaseData: base(r, "Home"), Jobs: s.jobRows(r.Context(), userStore, recent),
+		Connections: connections, BookingCount: len(visits), Bookings: visits,
 	}
-	visible := bookings[:0]
-	for _, booking := range bookings {
-		if booking.Kind == model.BookingKindSaved || visits[booking.ID].ID != 0 {
-			visible = append(visible, booking)
-		}
+	if len(data.Bookings) > 3 {
+		data.Bookings = data.Bookings[:3]
 	}
-	bookings = visible
-	for _, booking := range upcomingBookings(bookings, time.Now()) {
-		lake, _ := destinations.Resolve(booking.EffectiveLakeID())
-		url := fmt.Sprintf("/bookings/%d", booking.ID)
-		name := booking.Name
-		if booking.Kind == model.BookingKindSnapshot {
-			url = fmt.Sprintf("/jobs/%d", visits[booking.ID].ID)
-			name = lake.Name
-		}
-		data.Bookings = append(data.Bookings, dashboardBooking{Name: name, URL: url, Date: booking.TargetDate, Lake: lake.Name})
-	}
-	data.BookingCount = len(data.Bookings)
-	if problem != "" {
-		data.Flash = &Flash{Kind: "error", Message: problem}
-	}
-	s.render(w, formStatus(problem), "dashboard", data)
+	s.render(w, http.StatusOK, "dashboard", data)
 }
 
-func upcomingBookings(bookings []model.BookingRequest, now time.Time) []model.BookingRequest {
-	upcoming := make([]model.BookingRequest, 0, len(bookings))
+// A visit appears only after it has a pending or successful booking job. Older
+// request records remain readable for those jobs, but do not create visits.
+func upcomingVisits(bookings []model.BookingRequest, jobs []model.Job, now time.Time) []dashboardBooking {
+	byID := make(map[int64]model.BookingRequest, len(bookings))
 	for _, booking := range bookings {
+		byID[booking.ID] = booking
+	}
+	upcoming := make([]dashboardBooking, 0)
+	seen := make(map[int64]bool)
+	for _, job := range jobs {
+		if job.BookingRequestID == nil || job.Command != model.CommandBook || (job.Status.Terminal() && job.Status != model.JobSucceeded) {
+			continue
+		}
+		booking, ok := byID[*job.BookingRequestID]
+		if !ok || seen[booking.ID] || job.UserID != booking.UserID || job.ProfileID != booking.ProfileID {
+			continue
+		}
 		location, err := time.LoadLocation(booking.Timezone)
 		if err != nil {
 			location = time.UTC
 		}
-		if booking.Enabled && booking.TargetDate >= now.In(location).Format(time.DateOnly) {
-			upcoming = append(upcoming, booking)
+		if booking.TargetDate < now.In(location).Format(time.DateOnly) {
+			continue
 		}
+		seen[booking.ID] = true
+		upcoming = append(upcoming, dashboardBooking{
+			Name: lakeName(booking.EffectiveLakeID()), URL: fmt.Sprintf("/jobs/%d", job.ID), Date: booking.TargetDate,
+		})
 	}
-	sort.SliceStable(upcoming, func(i, j int) bool { return upcoming[i].TargetDate < upcoming[j].TargetDate })
-	if len(upcoming) > 3 {
-		upcoming = upcoming[:3]
-	}
+	sort.SliceStable(upcoming, func(i, j int) bool { return upcoming[i].Date < upcoming[j].Date })
 	return upcoming
 }

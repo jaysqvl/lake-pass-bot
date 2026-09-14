@@ -21,6 +21,7 @@ import (
 	"github.com/jaysqvl/lake-pass-bot/internal/model"
 	"github.com/jaysqvl/lake-pass-bot/internal/otp/bluebubbles"
 	"github.com/jaysqvl/lake-pass-bot/internal/store"
+	"github.com/jaysqvl/lake-pass-bot/internal/testutil/bookingfixture"
 )
 
 type webFixture struct {
@@ -29,6 +30,14 @@ type webFixture struct {
 	store   *store.Store
 	cfg     config.Config
 	admin   model.User
+}
+
+func createLegacyBooking(ctx context.Context, fixture webFixture, userID int64, request model.BookingRequest) (model.BookingRequest, error) {
+	return bookingfixture.Create(ctx, filepath.Join(fixture.cfg.AppDataDir, "buntzen.db"), fixture.store.ForUser(userID), request)
+}
+
+func updateLegacyBooking(ctx context.Context, fixture webFixture, userID int64, request model.BookingRequest) (model.BookingRequest, error) {
+	return bookingfixture.Update(ctx, filepath.Join(fixture.cfg.AppDataDir, "buntzen.db"), fixture.store.ForUser(userID), request)
 }
 
 func newWebFixture(t *testing.T) webFixture {
@@ -448,67 +457,29 @@ func TestPairingExplainsTheMissingProfilePrerequisite(t *testing.T) {
 	}
 }
 
-func TestBookingRunReturnsToBookingsWithExistingJobForDuplicates(t *testing.T) {
+func TestBookingSubmissionExplainsDuplicateWithoutCreatingAnotherJob(t *testing.T) {
 	fixture := newWebFixture(t)
+	createReadyWebLake(t, fixture, fixture.admin.ID, "Queue test profile")
 	resources := fixture.store.ForUser(fixture.admin.ID)
-	source, err := resources.CreateOTPSource(context.Background(), store.OTPSourceInput{
-		Name: "Queue test inbox", Provider: model.OTPProviderTwilio,
-		Identity: "twilio:queue-web-test", ProviderConfig: map[string]string{"auth_token": "synthetic-secret"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	profile, err := resources.CreateProfile(context.Background(), store.ProfileInput{LoginProbeURL: "https://example.test/login",
-		Name: "Queue test profile", DefaultVehicle: "Example Vehicle",
-		OTPSourceID: source.ID, Headless: true, DefaultTimeoutMS: 15_000, Enabled: true,
-		Credentials: &model.ProfileCredentials{Phone: "5559876543"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	booking, err := resources.CreateBookingRequest(context.Background(), model.BookingRequest{
-		Name: "Queue test booking", ProfileID: profile.ID, Enabled: true,
-		TargetDate: "2030-01-15", Timezone: "UTC", ReleaseTime: "07:00",
-		PrepMinutesBefore: 30, AuthDeadlineMinutesBefore: 5, PollDeadlineSeconds: 120,
-		PollMinSeconds: 1, PollMaxSeconds: 2, ConfirmationMode: model.RunModeManual,
-		LoginProbeURL: "https://example.test/login", AllDayPassURL: "https://example.test/all",
-		CheckAllDay: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	cookies := loginCookies(t, fixture)
-	for index, command := range []model.JobCommand{model.CommandAuthCheck, model.CommandDryRun, model.CommandBook} {
-		t.Run(string(command), func(t *testing.T) {
-			form := url.Values{"csrf_token": {csrfFrom(cookies)}, "command": {string(command)}}
-			path := fmt.Sprintf("/bookings/%d/run", booking.ID)
-			first := serveForm(fixture, http.MethodPost, path, cookies, form)
-			firstURL, err := url.Parse(first.Header().Get("Location"))
-			if err != nil || first.Code != http.StatusSeeOther || !strings.HasPrefix(firstURL.Path, "/jobs/") {
-				t.Fatalf("first run=%d location=%q", first.Code, first.Header().Get("Location"))
-			}
-			duplicate := serveForm(fixture, http.MethodPost, path, cookies, form)
-			redirect, err := url.Parse(duplicate.Header().Get("Location"))
-			if err != nil || duplicate.Code != http.StatusSeeOther || redirect.Path != "/bookings" || redirect.Query().Get("notice") != "queue-pending" || redirect.Query().Get("job") != strings.TrimPrefix(firstURL.Path, "/jobs/") {
-				t.Fatalf("duplicate run=%d location=%q", duplicate.Code, duplicate.Header().Get("Location"))
-			}
-			for range 2 { // Reload is a safe GET, not another attempt to enqueue.
-				page := serveForm(fixture, http.MethodGet, redirect.String(), cookies, nil)
-				for _, want := range []string{"No second job was created", `role="status"`, `href="` + firstURL.Path + `"`, "View existing job"} {
-					if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), want) {
-						t.Fatalf("duplicate notification missing %q: %d %s", want, page.Code, page.Body.String())
-					}
-				}
-			}
-			jobs, err := resources.ListJobs(context.Background(), 10)
-			if err != nil || len(jobs) != index+1 {
-				t.Fatalf("duplicate created extra job: count=%d err=%v", len(jobs), err)
-			}
-		})
+	form := url.Values{"csrf_token": {csrfFrom(cookies)}, "lake_id": {"buntzen"}, "target_date": {"2030-01-15"}, "pass_priority_1": {"all_day"}}
+	first := serveForm(fixture, http.MethodPost, "/bookings/new", cookies, form)
+	if first.Code != http.StatusSeeOther || !strings.HasPrefix(first.Header().Get("Location"), "/jobs/") {
+		t.Fatalf("first booking=%d location=%q", first.Code, first.Header().Get("Location"))
+	}
+	duplicate := serveForm(fixture, http.MethodPost, "/bookings/new", cookies, form)
+	if duplicate.Code != http.StatusUnprocessableEntity || !strings.Contains(duplicate.Body.String(), "already has a booking or pending job for that date") || !strings.Contains(duplicate.Body.String(), `role="alert"`) {
+		t.Fatalf("duplicate booking=%d body=%s", duplicate.Code, duplicate.Body.String())
+	}
+	for range 2 {
+		if page := serveForm(fixture, http.MethodGet, "/bookings", cookies, nil); page.Code != http.StatusOK {
+			t.Fatalf("bookings GET=%d", page.Code)
+		}
 	}
 	jobs, err := resources.ListJobs(context.Background(), 10)
-	if err != nil || len(jobs) != 3 {
-		t.Fatalf("jobs after duplicate POST=%+v err=%v", jobs, err)
+	requests, requestsErr := resources.ListBookingRequests(context.Background())
+	if err != nil || requestsErr != nil || len(jobs) != 1 || len(requests) != 1 {
+		t.Fatalf("duplicate created extra records: jobs=%+v requests=%+v errors=%v/%v", jobs, requests, err, requestsErr)
 	}
 }
 
@@ -542,7 +513,7 @@ func testSSESessionExpiry(t *testing.T, public, idle bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	booking, err := userStore.CreateBookingRequest(context.Background(), model.BookingRequest{
+	booking, err := createLegacyBooking(context.Background(), fixture, fixture.admin.ID, model.BookingRequest{
 		Name: "SSE booking", ProfileID: profile.ID, Enabled: true,
 		TargetDate: "2030-01-15", Timezone: "UTC", ReleaseTime: "07:00",
 		PrepMinutesBefore: 30, AuthDeadlineMinutesBefore: 5, PollDeadlineSeconds: 120,

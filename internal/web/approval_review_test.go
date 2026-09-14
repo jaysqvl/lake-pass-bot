@@ -16,11 +16,8 @@ func TestApprovalPageShowsRequestedDateVehicleAndSelectedPass(t *testing.T) {
 	profile, booking := createImmediateWebBooking(t, fixture, fixture.admin.ID, "approval-review", true)
 	ctx := context.Background()
 	booking.VehicleKeyword = "Request-specific vehicle"
-	booking, err := fixture.store.ForUser(fixture.admin.ID).UpdateBookingRequest(ctx, booking)
-	if err != nil {
-		t.Fatal(err)
-	}
-	job, err := fixture.server.engine.QueueBookingNow(ctx, fixture.admin.ID, booking.ID)
+	booking.ReleaseTime = "00:00"
+	job, err := fixture.server.engine.QueueLakeBooking(ctx, fixture.admin.ID, booking)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +48,7 @@ func TestApprovalPageShowsRequestedDateVehicleAndSelectedPass(t *testing.T) {
 		t.Fatal(err)
 	}
 	page = serveForm(fixture, http.MethodGet, fmt.Sprintf("/jobs/%d", job.ID), cookies, nil)
-	if page.Code != http.StatusOK || strings.Contains(page.Body.String(), booking.TargetDate+" · UTC") || strings.Contains(page.Body.String(), booking.VehicleKeyword) {
-		t.Fatal("terminal history must not present current editable booking settings as an issued receipt")
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), booking.TargetDate+" · UTC") || !strings.Contains(page.Body.String(), booking.VehicleKeyword) {
+		t.Fatal("terminal history lost immutable booking inputs")
 	}
 }

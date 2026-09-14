@@ -18,7 +18,7 @@ func TestBookingReservationIsAtomicAcrossRequestsModesAndProcesses(t *testing.T)
 	other := booking
 	other.ID = 0
 	other.Name = "Same day, another request"
-	other, err := database.CreateBookingRequest(ctx, testUserID, other)
+	other, err := database.createLegacyBookingFixture(ctx, testUserID, other)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,16 +57,19 @@ func TestBookingReservationIsAtomicAcrossRequestsModesAndProcesses(t *testing.T)
 		t.Fatalf("accepted=%d rejected=%d", accepted, rejected)
 	}
 	var winnerID int64
-	for _, request := range []model.BookingRequest{booking, other} {
-		conflict, err := database.ForUser(testUserID).BookingConflict(ctx, request.ID, model.CommandBook)
-		if err != nil || !conflict.Reservation || conflict.Job == nil {
-			t.Fatalf("concurrent duplicate did not resolve its winner: %+v err=%v", conflict, err)
-		}
-		if winnerID != 0 && conflict.Job.ID != winnerID {
-			t.Fatalf("same profile/date resolved different jobs: %d and %d", winnerID, conflict.Job.ID)
-		}
-		winnerID = conflict.Job.ID
+	if err := database.db.QueryRowContext(ctx, "SELECT job_id FROM booking_reservations WHERE profile_id=? AND target_date=?", booking.ProfileID, booking.TargetDate).Scan(&winnerID); err != nil {
+		t.Fatal(err)
 	}
+	winner, err := database.ForUser(testUserID).GetJob(ctx, winnerID)
+	if err != nil || winner.BookingRequestID == nil || (*winner.BookingRequestID != booking.ID && *winner.BookingRequestID != other.ID) {
+		t.Fatalf("reservation does not identify the accepted job: %+v %v", winner, err)
+	}
+	for _, request := range []model.BookingRequest{booking, other} {
+		if _, err := database.ForUser(testUserID).EnqueueJob(ctx, EnqueueJobParams{BookingRequestID: &request.ID, Command: model.CommandBook, RunMode: model.RunModeManual}); !errors.Is(err, ErrConflict) {
+			t.Fatalf("duplicate admission accepted for shared profile/date: %v", err)
+		}
+	}
+
 }
 
 func TestBookingReservationReleasesOnlyUnconfirmedAttempts(t *testing.T) {
@@ -136,7 +139,7 @@ func TestBookingReservationSurvivesHistoryRemovalAndRequestDateChanges(t *testin
 		t.Fatal(err)
 	}
 	booking.TargetDate = date.AddDate(0, 0, 1).Format(time.DateOnly)
-	booking, err = database.UpdateBookingRequest(ctx, testUserID, booking)
+	booking, err = database.updateLegacyBookingFixture(ctx, testUserID, booking)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +151,7 @@ func TestBookingReservationSurvivesHistoryRemovalAndRequestDateChanges(t *testin
 		t.Fatal(err)
 	}
 	booking.TargetDate = originalDate
-	if _, err := database.UpdateBookingRequest(ctx, testUserID, booking); err != nil {
+	if _, err := database.updateLegacyBookingFixture(ctx, testUserID, booking); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.SystemEnqueueJob(ctx, params); !errors.Is(err, ErrConflict) {

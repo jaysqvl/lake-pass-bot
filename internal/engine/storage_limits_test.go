@@ -213,7 +213,7 @@ func TestProfileLimitAfterConfirmationRetainsReservation(t *testing.T) {
 				t.Fatalf("post-confirmation storage limit result=%+v err=%v context=%v", result, err, ctx.Err())
 			}
 			fixture.engine.finish(job.ID, result.Status, result.Message, &result.ExitCode)
-			if _, err := fixture.engine.QueueBookingNow(context.Background(), fixture.user.ID, fixture.booking.ID); !errors.Is(err, store.ErrConflict) {
+			if _, err := fixture.engine.QueueLakeBooking(context.Background(), fixture.user.ID, fixture.booking); !errors.Is(err, store.ErrConflict) {
 				t.Fatalf("storage cancellation released reservation: %v", err)
 			}
 		})

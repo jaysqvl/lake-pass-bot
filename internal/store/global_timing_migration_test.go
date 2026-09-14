@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jaysqvl/lake-pass-bot/internal/model"
 	"github.com/jaysqvl/lake-pass-bot/internal/scheduler"
 )
 
@@ -147,6 +146,7 @@ func TestGlobalTimingMigrationPreservesPersonalDefaultsAndExecutionRecords(t *te
 	`).Scan(&remainingTimingColumns); err != nil || remainingTimingColumns != 0 {
 		t.Fatalf("lake table still owns timing: count=%d err=%v", remainingTimingColumns, err)
 	}
+	booking.ScheduleEnabled = false // Retired by migration 14; execution inputs remain unchanged.
 	gotBooking, err := database.ForUser(admin.ID).GetBookingRequest(ctx, booking.ID)
 	if err != nil || !reflect.DeepEqual(gotBooking, booking) {
 		t.Fatalf("migration changed booking snapshot: %+v, %v", gotBooking, err)
@@ -167,8 +167,9 @@ func TestGlobalTimingMigrationPreservesPersonalDefaultsAndExecutionRecords(t *te
 	if err != nil || !reflect.DeepEqual(gotJob, job) {
 		t.Fatalf("migration changed queued job: %+v, %v", gotJob, err)
 	}
-	conflict, err := database.ForUser(admin.ID).BookingConflict(ctx, booking.ID, model.CommandBook)
-	if err != nil || !conflict.Reservation || conflict.Job == nil || conflict.Job.ID != job.ID {
-		t.Fatalf("migration lost reservation: %+v, %v", conflict, err)
+	var reservationJobID int64
+	if err := database.db.QueryRowContext(ctx, "SELECT job_id FROM booking_reservations WHERE profile_id=? AND target_date=?", booking.ProfileID, booking.TargetDate).Scan(&reservationJobID); err != nil || reservationJobID != job.ID {
+		t.Fatalf("migration lost reservation: job=%d err=%v", reservationJobID, err)
 	}
+
 }
