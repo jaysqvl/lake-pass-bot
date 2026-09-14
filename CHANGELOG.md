@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.6.2...lake-pass-bot-v0.7.0) (2026-09-14)
+
+
+### Features
+
+* book visits from lake setup and preserve history when deleting requests ([ff58f8c](https://github.com/jaysqvl/lake-pass-bot/commit/ff58f8cb49ad31290b5fc500f430209f713d7976))
+
+
+### Bug Fixes
+
+* preserve OTP redaction and explicit worker error boundaries ([96b1ba3](https://github.com/jaysqvl/lake-pass-bot/commit/96b1ba31b323598d5b2a0ec91d80fcfaffe554ab))
+
 ## [0.6.2](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.6.1...lake-pass-bot-v0.6.2) (2026-09-13)
 
 
