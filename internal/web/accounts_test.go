@@ -548,7 +548,7 @@ func TestBlueBubblesServerChangeRequiresPasswordReentry(t *testing.T) {
 	}
 }
 
-func TestBookingFormCannotExpandYodelCredentialOrigin(t *testing.T) {
+func TestBookingFormCannotOverrideYodelCredentialOrigin(t *testing.T) {
 	fixture := newWebFixture(t)
 	resources := fixture.store.ForUser(fixture.admin.ID)
 	source, err := resources.CreateOTPSource(context.Background(), store.OTPSourceInput{
@@ -569,6 +569,7 @@ func TestBookingFormCannotExpandYodelCredentialOrigin(t *testing.T) {
 	cookies := loginCookies(t, fixture)
 	form := url.Values{
 		"csrf_token":                   {csrfFrom(cookies)},
+		"lake_id":                      {"buntzen"},
 		"name":                         {"Unsafe booking"},
 		"profile_id":                   {stringID(profile.ID)},
 		"target_date":                  {"2030-01-15"},
@@ -578,6 +579,7 @@ func TestBookingFormCannotExpandYodelCredentialOrigin(t *testing.T) {
 		"login_probe_url":              {"https://attacker.example/login"},
 		"all_day_pass_url":             {"https://attacker.example/pass"},
 		"check_all_day":                {"1"},
+		"pass_priority_1":              {"all_day"},
 		"prep_minutes_before":          {"30"},
 		"auth_deadline_minutes_before": {"5"},
 		"poll_deadline_seconds":        {"120"},
@@ -585,12 +587,12 @@ func TestBookingFormCannotExpandYodelCredentialOrigin(t *testing.T) {
 		"poll_max_seconds":             {"2"},
 	}
 	recorder := serveForm(fixture, http.MethodPost, "/bookings/new", cookies, form)
-	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), "approved Yodel origin") {
-		t.Fatalf("unsafe booking origin = %d: %s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusSeeOther {
+		t.Fatalf("queue with ignored origin overrides = %d: %s", recorder.Code, recorder.Body.String())
 	}
-	bookings, err := resources.ListBookingRequests(context.Background())
-	if err != nil || len(bookings) != 0 {
-		t.Fatalf("unsafe booking was persisted: count=%d err=%v", len(bookings), err)
+	snapshot := latestQueuedBooking(t, fixture, fixture.admin.ID)
+	if snapshot.ProfileID != profile.ID || snapshot.LoginProbeURL != profile.LoginProbeURL || snapshot.AllDayPassURL != "https://example.test/buntzen-lake/All-Day-Pass" {
+		t.Fatalf("untrusted form changed the booking origin: %+v", snapshot)
 	}
 }
 

@@ -59,8 +59,8 @@ func (s *Server) jobRows(ctx context.Context, userStore store.UserStore, jobs []
 		if job.BookingRequestID != nil {
 			booking := bookingsByID[*job.BookingRequestID]
 			location = pendingJobLocation(job, booking)
-			if !job.Status.Terminal() && booking.ID == *job.BookingRequestID && booking.UserID == job.UserID && booking.ProfileID == job.ProfileID {
-				requestName = booking.Name
+			if (!job.Status.Terminal() || booking.Kind == model.BookingKindSnapshot) && booking.ID == *job.BookingRequestID && booking.UserID == job.UserID && booking.ProfileID == job.ProfileID {
+				requestName = bookingDisplayName(booking)
 			}
 		}
 		rows = append(rows, jobRow{
@@ -131,19 +131,22 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 	}
 	location := time.UTC
 	var bookingReview []labelValue
-	// Pending jobs prevent edits to the linked profile and booking. Terminal
-	// history may outlive edits, so do not present current settings as its receipt.
-	if !job.Status.Terminal() && job.BookingRequestID != nil && job.Command == model.CommandBook {
+	// Snapshots remain immutable after completion. Legacy saved requests can
+	// change after a job finishes, so only show those while edits are locked.
+	if job.BookingRequestID != nil && job.Command == model.CommandBook {
 		booking, err := userStore.GetBookingRequest(r.Context(), *job.BookingRequestID)
 		if err != nil {
-			s.internal(w)
+			s.notFoundOrInternal(w, err)
 			return
 		}
 		location = pendingJobLocation(job, booking)
-		bookingReview = []labelValue{
-			{"Target date", booking.TargetDate + " · " + booking.Timezone},
-			{"Vehicle keyword", booking.VehicleKeyword},
-			{"Pass preference order", strings.Join(passNames(booking.PassOrder()), " → ")},
+		if !job.Status.Terminal() || booking.Kind == model.BookingKindSnapshot {
+			bookingReview = []labelValue{
+				{"Lake", lakeName(booking.LakeID)},
+				{"Target date", booking.TargetDate + " · " + booking.Timezone},
+				{"Vehicle keyword", booking.VehicleKeyword},
+				{"Pass preference order", strings.Join(passNames(booking.PassOrder()), " → ")},
+			}
 		}
 	}
 	view := jobView{
@@ -439,10 +442,10 @@ func jobDisplayMessage(job model.Job, location *time.Location) string {
 	return job.Message
 }
 
-// Pending booking settings are locked while a job uses them. Completed jobs
-// have no saved timezone, so use UTC rather than today's editable settings.
+// Pending bookings are locked; snapshots stay immutable after completion.
+// Completed legacy jobs use UTC instead of potentially edited settings.
 func pendingJobLocation(job model.Job, booking model.BookingRequest) *time.Location {
-	if job.Status.Terminal() || job.Command != model.CommandBook || job.BookingRequestID == nil ||
+	if (job.Status.Terminal() && booking.Kind != model.BookingKindSnapshot) || job.Command != model.CommandBook || job.BookingRequestID == nil ||
 		*job.BookingRequestID != booking.ID || job.ProfileID != booking.ProfileID || job.UserID != booking.UserID {
 		return time.UTC
 	}

@@ -35,7 +35,6 @@ type listData struct {
 type selectOption struct {
 	Value, Label string
 	Selected     bool
-	LakeDefaults string
 }
 type formField struct {
 	Name, Label, Type, Value, Placeholder, Help, Step, Min, Max string
@@ -52,13 +51,10 @@ type formSection struct {
 type formData struct {
 	BaseData
 	HiddenFields                                                                []hiddenField
-	LakeSettingsURL                                                             string
-	AdvancedHelp                                                                string
 	SubmitHelp                                                                  string
 	SubmitDisabled                                                              bool
 	Eyebrow, Heading, Description, CancelURL, ActionURL, SubmitLabel, FormError string
 	Sections                                                                    []formSection
-	LakeSelection                                                               bool
 	SourceSelection                                                             bool
 }
 

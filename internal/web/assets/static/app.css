@@ -141,6 +141,13 @@ input::-webkit-date-and-time-value { text-align: left; }
 .reset-defaults .field-help { margin: 0; }
 .account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; align-items: start; }
 .single-column { grid-template-columns: 1fr; }
+.quick-booking { max-width: 780px; }
+.quick-booking .panel-note { padding: 18px 0; }
+.quick-booking .panel-note p:last-child { margin-bottom: 0; }
+.quick-booking .form-actions { justify-content: flex-end; }
+.saved-requests { margin-top: 36px; }
+.delete-request { margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--line); }
+.delete-request p { color: var(--muted); }
 .form-spacer { display: block; }
 .sticky { position: static; }
 

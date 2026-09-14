@@ -101,6 +101,45 @@ If GHCR package visibility requires authentication, configure a read-only pull
 credential in Portainer's registry settings. This is registry access; the app
 does not need a Portainer API credential.
 
+### Unraid dashboard names, icon, and WebUI
+
+Unraid displays the Docker container name and network name. These belong to the
+saved deployment configuration; changing the app name, repository, or image does
+not rename them. The templates use `lake-pass-bot` for the service and container.
+The default network name derives from the Compose project or Portainer stack
+name, so an older stack can still display its original name while running the
+latest Lake Pass Bot image.
+
+The image and Compose templates include `net.unraid.docker.icon` and
+`net.unraid.docker.webui` labels. The icon is a PNG export of the application's
+lake pass mark. The WebUI label defaults to `http://[IP]:[PORT:8080]/`; Unraid
+substitutes the server address and the published host port. Other Docker hosts
+ignore these dashboard labels. For an existing image, adding the labels to its
+saved Compose file and recreating the container applies the same metadata.
+
+The Compose templates support two optional overrides:
+
+- `LAKE_PASS_UNRAID_WEBUI_URL`: the URL opened from Unraid, for example your
+  private reverse-proxy address or configured public HTTPS origin. This only
+  changes the shortcut; it does not configure DNS, the proxy, or app access.
+- `LAKE_PASS_UNRAID_ICON_URL`: an icon URL reachable by the Unraid host. The
+  default downloads [the project icon](../deploy/lake-pass-bot.png) from GitHub.
+  An offline installation can use a persistent host file URL. Supply a PNG:
+  DockerMan caches the downloaded bytes with a `.png` filename without converting
+  other image formats.
+
+Unraid caches icons by container name. A new name gets a fresh cache entry; a
+changed icon URL for an existing name may require clearing that container's
+cached icon and refreshing DockerMan. Keep Portainer as the manager of a
+Portainer stack; these labels do not transfer management to Unraid DockerMan.
+
+If renaming an installed service or stack, preserve its existing image, port,
+appdata, encryption key, security options, and runtime configuration. Wait for
+active jobs to finish, stop the old service before starting its replacement,
+and verify the application after the change. Never run both names against the
+same appdata. Keeping an old host directory or database filename is supported
+and does not affect the dashboard name.
+
 ### Upgrading from 0.5.0 or earlier
 
 Provider origin approval became required in 0.5.1. Existing BlueBubbles sources

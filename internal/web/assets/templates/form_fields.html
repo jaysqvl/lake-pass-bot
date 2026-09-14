@@ -23,7 +23,7 @@
     <select name="{{.Name}}" id="field-{{.Name}}"
             {{if .Help}}aria-describedby="help-{{.Name}}"{{end}} {{if .Required}}required{{end}}>
       {{range .Options}}
-      <option{{if .LakeDefaults}} data-lake-defaults="{{.LakeDefaults}}"{{end}} value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+      <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
       {{end}}
     </select>
     {{if .Help}}<small class="field-help" id="help-{{.Name}}">{{.Help}}</small>{{end}}

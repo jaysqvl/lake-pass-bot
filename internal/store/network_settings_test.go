@@ -122,11 +122,48 @@ func TestNetworkSettingsMigrationPreservesAccountAndBookingState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, profile, booking := createOwnedResources(t, database, member.ID, "network-migration")
+	resources := database.ForUser(member.ID)
+	source, err := resources.CreateOTPSource(ctx, OTPSourceInput{
+		Name: "Migration inbox", Provider: model.OTPProviderTwilio, Identity: "twilio:network-migration",
+		ProviderConfig: map[string]string{"auth_token": "synthetic-migration-token"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := resources.CreateProfile(ctx, ProfileInput{
+		Name: "Migration profile", DefaultVehicle: "Example Vehicle", OTPSourceID: source.ID,
+		LoginProbeURL: "https://example.test/login", Headless: true, DefaultTimeoutMS: 15_000, Enabled: true,
+		Credentials: &model.ProfileCredentials{Phone: "5559876543"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Seed the historical schema through its original columns. Current booking
+	// methods require the saved/snapshot distinction introduced in version 12.
+	now := database.now()
+	result, err := database.db.ExecContext(ctx, `
+		INSERT INTO booking_requests(user_id, name, profile_id, target_date, login_probe_url,
+			all_day_pass_url, vehicle_keyword, created_at, updated_at)
+		VALUES (?, 'Migration booking', ?, '2031-01-15', ?, 'https://example.test/all-day', ?, ?, ?)
+	`, member.ID, profile.ID, profile.LoginProbeURL, profile.DefaultVehicle, formatTime(now), formatTime(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bookingID, err := result.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
 	settings := model.DefaultAccountSettings()
 	settings.PrepMinutesBefore = 45
-	savedSettings, err := database.ForUser(member.ID).SaveAccountSettings(ctx, settings)
-	if err != nil {
+	settings.UserID, settings.UpdatedAt = member.ID, now
+	if _, err := database.db.ExecContext(ctx, `
+		INSERT INTO account_settings(user_id, headless, browser_channel, default_timeout_ms,
+			prep_minutes_before, auth_deadline_minutes_before, poll_deadline_seconds,
+			poll_min_seconds, poll_max_seconds, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, member.ID, settings.Headless, settings.BrowserChannel, settings.DefaultTimeoutMS,
+		settings.PrepMinutesBefore, settings.AuthDeadlineMinutesBefore, settings.PollDeadlineSeconds,
+		settings.PollMinSeconds, settings.PollMaxSeconds, formatTime(now)); err != nil {
 		t.Fatal(err)
 	}
 	for range 2 {
@@ -134,7 +171,7 @@ func TestNetworkSettingsMigrationPreservesAccountAndBookingState(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if version, err := database.SchemaVersion(ctx); err != nil || version != 11 {
+	if version, err := database.SchemaVersion(ctx); err != nil || version != 13 {
 		t.Fatalf("schema version=%d err=%v", version, err)
 	}
 	if _, err := database.SystemGetNetworkSettings(ctx); !errors.Is(err, ErrNotFound) {
@@ -145,13 +182,15 @@ func TestNetworkSettingsMigrationPreservesAccountAndBookingState(t *testing.T) {
 			t.Fatalf("migration changed user: %+v err=%v", got, err)
 		}
 	}
-	if got, err := database.ForUser(member.ID).GetAccountSettings(ctx); err != nil || !reflect.DeepEqual(got, savedSettings) {
+	if got, err := database.ForUser(member.ID).GetAccountSettings(ctx); err != nil || !reflect.DeepEqual(got, settings) {
 		t.Fatalf("migration changed account settings: %+v err=%v", got, err)
 	}
 	if got, err := database.ForUser(member.ID).GetProfile(ctx, profile.ID); err != nil || !reflect.DeepEqual(got, profile) {
 		t.Fatalf("migration changed profile: %+v err=%v", got, err)
 	}
-	if got, err := database.ForUser(member.ID).GetBookingRequest(ctx, booking.ID); err != nil || !reflect.DeepEqual(got, booking) {
+	if got, err := resources.GetBookingRequest(ctx, bookingID); err != nil || got.Name != "Migration booking" || got.ProfileID != profile.ID ||
+		got.TargetDate != "2031-01-15" || got.VehicleKeyword != profile.DefaultVehicle || got.Kind != model.BookingKindSaved ||
+		!got.CreatedAt.Equal(now) || !got.UpdatedAt.Equal(now) {
 		t.Fatalf("migration changed booking: %+v err=%v", got, err)
 	}
 }

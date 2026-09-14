@@ -390,8 +390,9 @@ func TestEncryptedSecretsAreNeverRendered(t *testing.T) {
 	}
 }
 
-func TestNewBookingFormUsesLocalSafeDefaults(t *testing.T) {
+func TestNewBookingFormUsesLakeDefaultsWithoutSetupOverrides(t *testing.T) {
 	fixture := newWebFixture(t)
+	createImmediateWebBooking(t, fixture, fixture.admin.ID, "Safe booking defaults", true)
 	cookies := loginCookies(t, fixture)
 	request := authenticatedRequest(http.MethodGet, "http://example.test/bookings/new", cookies, nil)
 	recorder := httptest.NewRecorder()
@@ -400,18 +401,28 @@ func TestNewBookingFormUsesLocalSafeDefaults(t *testing.T) {
 		t.Fatalf("new booking form = %d: %s", recorder.Code, recorder.Body.String())
 	}
 	body := recorder.Body.String()
-	for _, expected := range []string{
-		`name="timezone" value="America/Vancouver"`,
-		`name="release_time" value="07:00"`,
-		`name="all_day_pass_url" value="https://example.test/buntzen-lake/All-Day-Pass"`,
-		`name="half_day_pass_url" value="https://example.test/buntzen-lake/Half-Day-Pass"`,
-		`value="manual" selected`,
+	for _, unexpected := range []string{
+		`name="timezone"`, `name="release_time"`, `name="all_day_pass_url"`,
+		`name="half_day_pass_url"`, `name="confirmation_mode"`, `name="profile_id"`, `name="vehicle_keyword"`,
 	} {
-		if !strings.Contains(body, expected) {
-			t.Fatalf("new booking form missing safe default %q", expected)
+		if strings.Contains(body, unexpected) {
+			t.Fatalf("new booking form exposed a setup override %q", unexpected)
 		}
 	}
 	assertBookingPassChoices(t, body, []string{"all_day", "afternoon", "morning"})
+	form := url.Values{
+		"csrf_token": {csrfFrom(cookies)}, "lake_id": {"buntzen"}, "target_date": {"2030-07-20"},
+		"pass_priority_1": {"all_day"}, "pass_priority_2": {"afternoon"}, "pass_priority_3": {"morning"},
+	}
+	response := serveForm(fixture, http.MethodPost, "/bookings/new", cookies, form)
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("queue with catalog defaults=%d %s", response.Code, response.Body.String())
+	}
+	snapshot := latestQueuedBooking(t, fixture, fixture.admin.ID)
+	if snapshot.Timezone != "America/Vancouver" || snapshot.ReleaseTime != "07:00" || snapshot.ConfirmationMode != model.RunModeManual ||
+		snapshot.AllDayPassURL != "https://example.test/buntzen-lake/All-Day-Pass" || snapshot.HalfDayPassURL != "https://example.test/buntzen-lake/Half-Day-Pass" {
+		t.Fatalf("queued visit lost safe catalog defaults: %+v", snapshot)
+	}
 }
 
 func TestPairingExplainsTheMissingProfilePrerequisite(t *testing.T) {

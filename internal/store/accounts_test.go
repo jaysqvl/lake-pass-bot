@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jaysqvl/lake-pass-bot/internal/destinations"
 	"github.com/jaysqvl/lake-pass-bot/internal/model"
 )
 
@@ -186,6 +187,12 @@ func TestDeleteMemberRequiresDisabledQuiescentAccountAndReleasesOwnedState(t *te
 		t.Fatal(err)
 	}
 	bookingID := booking.ID
+	lake, _ := destinations.Resolve(profile.LakeID)
+	settings := model.DefaultLakeSettings(lake)
+	settings.BookingProfileID = profile.ID
+	if _, err := resources.SaveLakeSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
 	job, err := resources.EnqueueJob(ctx, EnqueueJobParams{
 		BookingRequestID: &bookingID, Command: model.CommandBook, RunMode: model.RunModeManual,
 	})
@@ -245,7 +252,7 @@ func TestDeleteMemberRequiresDisabledQuiescentAccountAndReleasesOwnedState(t *te
 	if _, err := database.GetSession(ctx, memberSession.Token); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleted member session error=%v", err)
 	}
-	for _, table := range []string{"sessions", "otp_sources", "profiles", "booking_requests", "jobs", "job_events", "job_decisions"} {
+	for _, table := range []string{"sessions", "otp_sources", "profiles", "lake_settings", "booking_requests", "jobs", "job_events", "job_decisions"} {
 		var count int
 		if err := database.db.QueryRowContext(ctx, "SELECT count(*) FROM "+table+" WHERE user_id = ?", member.ID).Scan(&count); err != nil {
 			t.Fatalf("count %s: %v", table, err)

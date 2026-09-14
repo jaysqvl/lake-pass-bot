@@ -40,6 +40,24 @@ func (s *Store) SystemEnqueueJob(ctx context.Context, params EnqueueJobParams) (
 }
 
 func (s *Store) enqueueJob(ctx context.Context, actorUserID int64, params EnqueueJobParams) (model.Job, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.Job{}, fmt.Errorf("begin enqueue transaction: %w", err)
+	}
+	defer tx.Rollback()
+	job, err := s.enqueueJobTx(ctx, tx, actorUserID, params)
+	if err != nil {
+		return model.Job{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Job{}, fmt.Errorf("commit enqueue transaction: %w", err)
+	}
+	return job, nil
+}
+
+// enqueueJobTx owns admission inside the caller's transaction, so a new
+// execution snapshot and its job either both persist or neither does.
+func (s *Store) enqueueJobTx(ctx context.Context, tx *sql.Tx, actorUserID int64, params EnqueueJobParams) (model.Job, error) {
 	if params.OTPSourceID < 0 || (params.OTPSourceID != 0 && params.Command != model.CommandAuthCheck) {
 		return model.Job{}, errors.New("an explicit OTP source is only supported for sign-in checks")
 	}
@@ -80,12 +98,6 @@ func (s *Store) enqueueJob(ctx context.Context, actorUserID int64, params Enqueu
 			return model.Job{}, errors.New("immediate booking must be due now with an unexpired deadline")
 		}
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return model.Job{}, fmt.Errorf("begin enqueue transaction: %w", err)
-	}
-	defer tx.Rollback()
-
 	profileID := params.ProfileID
 	var jobUserID int64
 	if params.BookingRequestID != nil {
@@ -223,13 +235,7 @@ func (s *Store) enqueueJob(ctx context.Context, actorUserID int64, params Enqueu
 	if err != nil {
 		return model.Job{}, fmt.Errorf("read job id: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
-		return model.Job{}, fmt.Errorf("commit enqueue transaction: %w", err)
-	}
-	if actorUserID > 0 {
-		return s.GetJob(ctx, actorUserID, id)
-	}
-	return s.SystemGetJob(ctx, id)
+	return scanJob(tx.QueryRowContext(ctx, "SELECT "+jobColumns+" FROM jobs WHERE id = ?", id))
 }
 
 func (s *Store) SystemClaimNextDueJob(ctx context.Context, workerOwner string) (model.Job, error) {

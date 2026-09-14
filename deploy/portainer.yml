@@ -6,6 +6,10 @@ services:
   lake-pass-bot:
     image: "${LAKE_PASS_IMAGE-${BUNTZEN_IMAGE:-ghcr.io/jaysqvl/lake-pass-bot:latest}}"
     container_name: lake-pass-bot
+    # Optional Unraid dashboard metadata; other Docker hosts ignore these labels.
+    labels:
+      net.unraid.docker.icon: "${LAKE_PASS_UNRAID_ICON_URL:-https://raw.githubusercontent.com/jaysqvl/lake-pass-bot/main/deploy/lake-pass-bot.png}"
+      net.unraid.docker.webui: "${LAKE_PASS_UNRAID_WEBUI_URL:-http://[IP]:[PORT:8080]/}"
     restart: unless-stopped
     init: true
     ports:

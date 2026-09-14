@@ -137,7 +137,7 @@ validate_doctor() {
   report="$(docker exec "$container" /usr/local/bin/lake-pass-bot doctor)"
   printf '%s\n' "$report" | jq -e '
     .ok == true and
-    .schema_version == 11 and
+    .schema_version == 13 and
     .action_protocol == 2 and
     .appdata_dir == "/appdata" and
     .database_path == "/appdata/lake-pass-bot.db" and

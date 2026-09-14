@@ -1,0 +1,18 @@
+{{define "content"}}
+<section class="section-head">
+  <div><p class="eyebrow">New visit</p><h1>Book {{.Lake.Name}}</h1><p>Choose when to visit and which passes to try.</p></div>
+</section>
+<form class="form-card quick-booking" method="post" action="/bookings/new">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <input type="hidden" name="lake_id" value="{{.Lake.ID}}">
+  {{if .FormError}}<div class="flash error" role="alert" id="form-error" tabindex="-1">{{.FormError}}</div>{{end}}
+  <div class="form-context">
+    {{if .Problem}}<p>{{.Problem}}</p><a class="text-link" href="/lakes/{{.Lake.ID}}">Finish lake setup</a>
+    {{else}}<p>Booking with <strong>{{.AccountName}}</strong></p><a class="text-link" href="/lakes/{{.Lake.ID}}">Manage lake connection</a>{{end}}
+  </div>
+  {{template "form-section" .Visit}}
+  {{template "form-section" .Passes}}
+  <div class="panel-note"><p>If passes haven’t been released, your job waits for the lake’s release schedule. Otherwise, it starts as soon as a worker is available.</p><p>{{.Confirmation}} <a href="/settings">Booking defaults</a></p></div>
+  <div class="form-actions actions"><a class="button ghost" href="/bookings">Cancel</a><button class="primary" type="submit"{{if .Problem}} disabled{{end}}>Book</button></div>
+</form>
+{{end}}

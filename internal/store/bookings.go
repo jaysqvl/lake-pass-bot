@@ -16,6 +16,22 @@ func (s *Store) CreateBookingRequest(ctx context.Context, userID int64, request 
 	if userID <= 0 {
 		return model.BookingRequest{}, ErrUserRequired
 	}
+	if request.Kind != "" && request.Kind != model.BookingKindSaved {
+		return model.BookingRequest{}, errors.New("execution snapshots must be created with a job")
+	}
+	request.Kind = model.BookingKindSaved
+	request, err := s.prepareBookingRequest(ctx, userID, request)
+	if err != nil {
+		return model.BookingRequest{}, err
+	}
+	id, err := s.insertBookingRequest(ctx, s.db, userID, request)
+	if err != nil {
+		return model.BookingRequest{}, err
+	}
+	return s.GetBookingRequest(ctx, userID, id)
+}
+
+func (s *Store) prepareBookingRequest(ctx context.Context, userID int64, request model.BookingRequest) (model.BookingRequest, error) {
 	request.UserID = userID
 	request = normalizeBooking(request)
 	profile, err := s.bookingProfile(ctx, userID, request)
@@ -33,29 +49,39 @@ func (s *Store) CreateBookingRequest(ctx context.Context, userID int64, request 
 		// authentication now reads the profile's login URL directly.
 		request.LoginProbeURL = profile.LoginProbeURL
 	}
+	return request, nil
+}
+
+// Both saved requests and execution snapshots use the same persisted fields;
+// only the latter are inserted together with a job in a transaction.
+type bookingExecer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func (s *Store) insertBookingRequest(ctx context.Context, executor bookingExecer, userID int64, request model.BookingRequest) (int64, error) {
 	now := s.now()
-	result, err := s.db.ExecContext(ctx, `
+	result, err := executor.ExecContext(ctx, `
 		INSERT INTO booking_requests(
 			user_id, name, profile_id, enabled, schedule_enabled, target_date, timezone, release_time,
 			prep_minutes_before, auth_deadline_minutes_before, poll_deadline_seconds,
 			poll_min_seconds, poll_max_seconds, confirmation_mode, login_probe_url,
 			all_day_pass_url, half_day_pass_url, check_all_day, check_afternoon, check_morning,
-			pass_order, created_at, updated_at, lake_id, release_days_before, vehicle_keyword
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			pass_order, created_at, updated_at, lake_id, release_days_before, vehicle_keyword, kind
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, userID, request.Name, request.ProfileID, request.Enabled, request.ScheduleEnabled,
 		request.TargetDate, request.Timezone, request.ReleaseTime, request.PrepMinutesBefore,
 		request.AuthDeadlineMinutesBefore, request.PollDeadlineSeconds, request.PollMinSeconds,
 		request.PollMaxSeconds, request.ConfirmationMode, request.LoginProbeURL,
 		request.AllDayPassURL, request.HalfDayPassURL, request.CheckAllDay,
-		request.CheckAfternoon, request.CheckMorning, passOrderCSV(request.PreferredPasses), formatTime(now), formatTime(now), request.LakeID, request.EffectiveReleaseDaysBefore(), request.VehicleKeyword)
+		request.CheckAfternoon, request.CheckMorning, passOrderCSV(request.PreferredPasses), formatTime(now), formatTime(now), request.LakeID, request.EffectiveReleaseDaysBefore(), request.VehicleKeyword, request.Kind)
 	if err != nil {
-		return model.BookingRequest{}, mapWriteError(err)
+		return 0, mapWriteError(err)
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
-		return model.BookingRequest{}, fmt.Errorf("read booking request id: %w", err)
+		return 0, fmt.Errorf("read booking request id: %w", err)
 	}
-	return s.GetBookingRequest(ctx, userID, id)
+	return id, nil
 }
 
 func (s *Store) UpdateBookingRequest(ctx context.Context, userID int64, request model.BookingRequest) (model.BookingRequest, error) {
@@ -92,7 +118,7 @@ func (s *Store) UpdateBookingRequest(ctx context.Context, userID int64, request 
 			poll_max_seconds = ?, confirmation_mode = ?, login_probe_url = COALESCE(NULLIF(?, ''), login_probe_url),
 			all_day_pass_url = ?, half_day_pass_url = ?, check_all_day = ?,
 			check_afternoon = ?, check_morning = ?, pass_order = ?, updated_at = ?, lake_id = ?, release_days_before = ?, vehicle_keyword = ?
-		WHERE id = ? AND user_id = ? AND NOT EXISTS (
+		WHERE id = ? AND user_id = ? AND kind = 'saved' AND NOT EXISTS (
 			SELECT 1 FROM jobs WHERE booking_request_id = booking_requests.id
 			AND status IN ('queued', 'running', 'awaiting_approval')
 		)
@@ -105,8 +131,19 @@ func (s *Store) UpdateBookingRequest(ctx context.Context, userID int64, request 
 	if err != nil {
 		return model.BookingRequest{}, mapWriteError(err)
 	}
-	if err := s.classifyOwnedGuardedUpdate(ctx, "booking_requests", userID, request.ID, result); err != nil {
-		return model.BookingRequest{}, err
+	count, err := result.RowsAffected()
+	if err != nil {
+		return model.BookingRequest{}, fmt.Errorf("read booking update result: %w", err)
+	}
+	if count == 0 {
+		current, err := s.GetBookingRequest(ctx, userID, request.ID)
+		if err != nil {
+			return model.BookingRequest{}, err
+		}
+		if current.Kind != model.BookingKindSaved {
+			return model.BookingRequest{}, fmt.Errorf("%w: booking history cannot be edited", ErrConflict)
+		}
+		return model.BookingRequest{}, fmt.Errorf("%w: record has a queued or active job", ErrConflict)
 	}
 	return s.GetBookingRequest(ctx, userID, request.ID)
 }
@@ -119,10 +156,18 @@ func (s *Store) GetBookingRequest(ctx context.Context, userID, id int64) (model.
 }
 
 func (s *Store) ListBookingRequests(ctx context.Context, userID int64) ([]model.BookingRequest, error) {
+	return s.listBookingRequests(ctx, userID, "")
+}
+
+func (s *Store) ListSavedBookingRequests(ctx context.Context, userID int64) ([]model.BookingRequest, error) {
+	return s.listBookingRequests(ctx, userID, " AND kind = 'saved'")
+}
+
+func (s *Store) listBookingRequests(ctx context.Context, userID int64, filter string) ([]model.BookingRequest, error) {
 	if userID <= 0 {
 		return nil, ErrUserRequired
 	}
-	rows, err := s.db.QueryContext(ctx, bookingSelect+" WHERE user_id = ? ORDER BY name, id", userID)
+	rows, err := s.db.QueryContext(ctx, bookingSelect+" WHERE user_id = ?"+filter+" ORDER BY name, id", userID)
 	if err != nil {
 		return nil, fmt.Errorf("list booking requests: %w", err)
 	}
@@ -163,7 +208,7 @@ func (s *Store) SystemListBookingRequests(ctx context.Context) ([]model.BookingR
 
 func (s *Store) SystemListScheduledBookingRequests(ctx context.Context) ([]model.BookingRequest, error) {
 	rows, err := s.db.QueryContext(ctx, bookingSelect+`
-		WHERE enabled = 1 AND schedule_enabled = 1
+		WHERE kind = 'saved' AND enabled = 1 AND schedule_enabled = 1
 		AND EXISTS (SELECT 1 FROM users WHERE users.id = booking_requests.user_id AND users.status = 'active')
 		AND EXISTS (SELECT 1 FROM profiles WHERE profiles.id = booking_requests.profile_id AND profiles.enabled = 1)
 		ORDER BY id`)
@@ -186,11 +231,59 @@ func (s *Store) DeleteBookingRequest(ctx context.Context, userID, id int64) erro
 	if userID <= 0 {
 		return ErrUserRequired
 	}
-	result, err := s.db.ExecContext(ctx, "DELETE FROM booking_requests WHERE id = ? AND user_id = ?", id, userID)
+	// The immediate transaction serializes deletion with job admission. Retained
+	// jobs keep their execution inputs; removing a saved booking never removes
+	// its history or releases a completed booking reservation.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin booking deletion: %w", err)
+	}
+	defer tx.Rollback()
+
+	var name string
+	var hasJobs, hasPendingJobs bool
+	err = tx.QueryRowContext(ctx, `
+		SELECT name,
+			EXISTS (SELECT 1 FROM jobs WHERE booking_request_id = booking_requests.id),
+			EXISTS (SELECT 1 FROM jobs WHERE booking_request_id = booking_requests.id
+				AND status IN ('queued', 'running', 'awaiting_approval'))
+		FROM booking_requests WHERE id = ? AND user_id = ? AND kind = 'saved'
+	`, id, userID).Scan(&name, &hasJobs, &hasPendingJobs)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("read booking before deletion: %w", err)
+	}
+	if hasPendingJobs {
+		return fmt.Errorf("%w: booking has a queued or active job", ErrConflict)
+	}
+
+	var result sql.Result
+	if hasJobs {
+		name, err = snapshotBookingName(name)
+		if err != nil {
+			return err
+		}
+		result, err = tx.ExecContext(ctx, `
+			UPDATE booking_requests SET kind = 'archived', name = ?, enabled = 0,
+				schedule_enabled = 0, updated_at = ?
+			WHERE id = ? AND user_id = ? AND kind = 'saved'
+		`, name, formatTime(s.now()), id, userID)
+	} else {
+		result, err = tx.ExecContext(ctx,
+			"DELETE FROM booking_requests WHERE id = ? AND user_id = ? AND kind = 'saved'", id, userID)
+	}
 	if err != nil {
 		return fmt.Errorf("delete booking request: %w", mapWriteError(err))
 	}
-	return requireAffected(result)
+	if err := requireAffected(result); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit booking deletion: %w", err)
+	}
+	return nil
 }
 
 const bookingSelect = `
@@ -198,7 +291,7 @@ const bookingSelect = `
 		prep_minutes_before, auth_deadline_minutes_before, poll_deadline_seconds,
 		poll_min_seconds, poll_max_seconds, confirmation_mode, login_probe_url,
 		all_day_pass_url, half_day_pass_url, check_all_day, check_afternoon, check_morning,
-		pass_order, created_at, updated_at, lake_id, release_days_before, vehicle_keyword
+		pass_order, created_at, updated_at, lake_id, release_days_before, vehicle_keyword, kind
 	FROM booking_requests`
 
 func scanBooking(scanner rowScanner) (model.BookingRequest, error) {
@@ -210,7 +303,7 @@ func scanBooking(scanner rowScanner) (model.BookingRequest, error) {
 		&request.PollDeadlineSeconds, &request.PollMinSeconds, &request.PollMaxSeconds,
 		&request.ConfirmationMode, &request.LoginProbeURL, &request.AllDayPassURL,
 		&request.HalfDayPassURL, &request.CheckAllDay, &request.CheckAfternoon,
-		&request.CheckMorning, &passOrder, &created, &updated, &request.LakeID, &request.ReleaseDaysBefore, &request.VehicleKeyword); errors.Is(err, sql.ErrNoRows) {
+		&request.CheckMorning, &passOrder, &created, &updated, &request.LakeID, &request.ReleaseDaysBefore, &request.VehicleKeyword, &request.Kind); errors.Is(err, sql.ErrNoRows) {
 		return model.BookingRequest{}, ErrNotFound
 	} else if err != nil {
 		return model.BookingRequest{}, fmt.Errorf("scan booking request: %w", err)
@@ -229,6 +322,9 @@ func scanBooking(scanner rowScanner) (model.BookingRequest, error) {
 }
 
 func normalizeBooking(request model.BookingRequest) model.BookingRequest {
+	if request.Kind == "" {
+		request.Kind = model.BookingKindSaved
+	}
 	request.Name = strings.TrimSpace(request.Name)
 	request.VehicleKeyword = strings.TrimSpace(request.VehicleKeyword)
 	request.LakeID = request.EffectiveLakeID()

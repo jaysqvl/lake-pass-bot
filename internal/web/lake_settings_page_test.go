@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -44,7 +45,8 @@ func lakeSettingsPageValues(settings model.LakeSettings) url.Values {
 
 func accountSettingsPageValues(settings model.AccountSettings) url.Values {
 	values := url.Values{
-		"browser_channel": {settings.BrowserChannel}, "default_timeout_ms": {strconv.Itoa(settings.DefaultTimeoutMS)},
+		"default_confirmation_mode": {string(settings.DefaultConfirmationMode)},
+		"browser_channel":           {settings.BrowserChannel}, "default_timeout_ms": {strconv.Itoa(settings.DefaultTimeoutMS)},
 		"prep_minutes_before": {strconv.Itoa(settings.PrepMinutesBefore)}, "auth_deadline_minutes_before": {strconv.Itoa(settings.AuthDeadlineMinutesBefore)},
 		"poll_deadline_seconds": {strconv.Itoa(settings.PollDeadlineSeconds)}, "poll_min_seconds": {strconv.FormatFloat(settings.PollMinSeconds, 'f', -1, 64)},
 		"poll_max_seconds": {strconv.FormatFloat(settings.PollMaxSeconds, 'f', -1, 64)},
@@ -53,6 +55,14 @@ func accountSettingsPageValues(settings model.AccountSettings) url.Values {
 		values.Set("headless", "1")
 	}
 	return values
+}
+
+func assertSettingsSelectChoice(t *testing.T, body, name, value string) {
+	t.Helper()
+	markup := regexp.MustCompile(`(?s)<select name="` + regexp.QuoteMeta(name) + `"[^>]*>(.*?)</select>`).FindStringSubmatch(body)
+	if len(markup) != 2 || !strings.Contains(markup[1], `value="`+value+`" selected`) {
+		t.Fatalf("settings selection %s lost value %q", name, value)
+	}
 }
 
 func TestLakeVehicleFallbackUsesOnlyUnambiguousOwnedLegacyChoices(t *testing.T) {
@@ -91,11 +101,13 @@ func TestLakeVehicleFallbackUsesOnlyUnambiguousOwnedLegacyChoices(t *testing.T) 
 				t.Fatal(err)
 			}
 			cookies := loginCookies(t, f)
-			for _, path := range []string{"/lakes/buntzen", "/bookings/new?lake_id=buntzen"} {
-				page := serveForm(f, http.MethodGet, path, cookies, nil)
-				if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `name="vehicle_keyword" value="`+test.want+`"`) {
-					t.Fatalf("%s did not use the safe legacy vehicle fallback %q: %d %s", path, test.want, page.Code, page.Body.String())
-				}
+			page := serveForm(f, http.MethodGet, "/lakes/buntzen", cookies, nil)
+			if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `name="vehicle_keyword" value="`+test.want+`"`) {
+				t.Fatalf("lake settings did not use the safe legacy vehicle fallback %q: %d %s", test.want, page.Code, page.Body.String())
+			}
+			page = serveForm(f, http.MethodGet, "/bookings/new?lake_id=buntzen", cookies, nil)
+			if page.Code != http.StatusOK || strings.Contains(page.Body.String(), `name="vehicle_keyword"`) || !strings.Contains(page.Body.String(), `href="/lakes/buntzen"`) {
+				t.Fatalf("booking form did not keep vehicle setup on Lakes: %d %s", page.Code, page.Body.String())
 			}
 			if _, err := resources.GetLakeSettings(ctx, "buntzen"); !errors.Is(err, store.ErrNotFound) {
 				t.Fatalf("reading legacy defaults persisted an override: %v", err)
@@ -203,8 +215,9 @@ func TestSettingsAndLakePagesSavePersonalDefaultsAndResetOnlyTheirOwner(t *testi
 		if strings.Contains(page.Body.String(), "Manage OTP sources") || strings.Contains(page.Body.String(), "<h2>OTP sources</h2>") {
 			t.Fatal("OTP configuration appears inside global Settings instead of its own page")
 		}
+		assertSettingsSelectChoice(t, page.Body.String(), "default_confirmation_mode", string(account.DefaultConfirmationMode))
 		for name, values := range accountSettingsPageValues(account) {
-			if name != "browser_channel" && name != "headless" && !strings.Contains(page.Body.String(), `name="`+name+`" value="`+values[0]+`"`) {
+			if name != "browser_channel" && name != "headless" && name != "default_confirmation_mode" && !strings.Contains(page.Body.String(), `name="`+name+`" value="`+values[0]+`"`) {
 				t.Fatalf("global settings page lost %s=%s", name, values[0])
 			}
 		}
@@ -359,8 +372,9 @@ func TestPersonalSettingsValidationPreservesInput(t *testing.T) {
 			if response.Code != http.StatusUnprocessableEntity || !strings.Contains(body, test.message) || !strings.Contains(body, `value="chrome-beta" selected`) {
 				t.Fatalf("invalid global defaults lost form input: %d %s", response.Code, body)
 			}
+			assertSettingsSelectChoice(t, body, "default_confirmation_mode", values.Get("default_confirmation_mode"))
 			for name, submitted := range values {
-				if name == "csrf_token" || name == "browser_channel" || name == "headless" {
+				if name == "csrf_token" || name == "browser_channel" || name == "headless" || name == "default_confirmation_mode" {
 					continue
 				}
 				if !strings.Contains(html.UnescapeString(body), `name="`+name+`" value="`+submitted[0]+`"`) {

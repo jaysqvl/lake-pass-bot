@@ -86,6 +86,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /lakes/{lakeID}", s.authenticated(s.lakePage))
 	s.mux.HandleFunc("POST /lakes/{lakeID}", s.authenticated(s.lakeUpdate))
 	s.mux.HandleFunc("POST /lakes/{lakeID}/reset", s.authenticated(s.lakeReset))
+	s.mux.HandleFunc("POST /lakes/{lakeID}/connection", s.authenticated(s.lakeConnectionUpdate))
 
 	s.mux.HandleFunc("GET /admin/users", s.authenticated(s.adminOnly(s.usersPage)))
 	s.mux.HandleFunc("GET /admin/users/new", s.authenticated(s.adminOnly(s.userNewPage)))
@@ -112,11 +113,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /profiles/{id}", s.authenticated(s.profileUpdate))
 	s.mux.HandleFunc("POST /profiles/{id}/sign-in", s.authenticated(s.profileSignIn))
 
-	s.mux.HandleFunc("GET /bookings", s.authenticated(s.bookings))
-	s.mux.HandleFunc("GET /bookings/new", s.authenticated(s.bookingNew))
-	s.mux.HandleFunc("POST /bookings/new", s.authenticated(s.bookingCreate))
-	s.mux.HandleFunc("GET /bookings/{id}", s.authenticated(s.bookingEdit))
-	s.mux.HandleFunc("POST /bookings/{id}", s.authenticated(s.bookingUpdate))
+	s.mux.HandleFunc("GET /bookings", s.authenticated(s.lakeBookingsPage))
+	s.mux.HandleFunc("GET /bookings/new", s.authenticated(s.lakeBookingNew))
+	s.mux.HandleFunc("POST /bookings/new", s.authenticated(s.lakeBookingCreate))
+	s.mux.HandleFunc("GET /bookings/{id}", s.authenticated(s.savedBookingPage))
+	s.mux.HandleFunc("POST /bookings/{id}/delete", s.authenticated(s.savedBookingDelete))
 	s.mux.HandleFunc("POST /bookings/{id}/run", s.authenticated(s.bookingRun))
 
 	s.mux.HandleFunc("GET /jobs", s.authenticated(s.jobs))
@@ -138,6 +139,7 @@ func base(r *http.Request, title string) BaseData {
 func flashFor(value string) *Flash {
 	messages := map[string]string{
 		"created": "Saved successfully.", "updated": "Changes saved.", "queued": "Job queued.",
+		"deleted": "Saved request deleted. Job history is kept.",
 		"healthy": "Provider authentication succeeded.", "cancelled": "Cancellation requested.", "decided": "Decision sent to the waiting browser.",
 		"setup": "Administrator account created.", "user-created": "User account created.",
 		"username-changed": "Username changed. Use the new username the next time you sign in.",

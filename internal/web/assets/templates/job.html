@@ -16,6 +16,7 @@
     <button id="cancel-job" class="danger" data-decision="cancel-job" {{if or (not .Job.CanCancel) .Job.AwaitingApproval}}hidden{{end}} {{if not .Job.CanCancel}}disabled{{end}}>Cancel job</button>
   </article>
   <article class="card"><h2>Details</h2><dl>
+    {{range .Job.BookingReview}}<div><dt>{{.Label}}</dt><dd>{{.Value}}</dd></div>{{end}}
     <div><dt>Confirmation</dt><dd>{{.Job.Mode}}</dd></div>
     {{if .Job.TimingLabel}}<div><dt>Timing</dt><dd>{{.Job.TimingLabel}}</dd></div>{{end}}
     {{if .Job.TimingLabel}}<div><dt>Expires</dt><dd>{{.Job.ExpiresLabel}}</dd></div>{{end}}

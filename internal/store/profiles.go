@@ -259,11 +259,18 @@ func (s *Store) DeleteProfile(ctx context.Context, userID, id int64) error {
 	if userID <= 0 {
 		return ErrUserRequired
 	}
-	result, err := s.db.ExecContext(ctx, "DELETE FROM profiles WHERE id = ? AND user_id = ?", id, userID)
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM profiles WHERE id = ? AND user_id = ?
+		AND NOT EXISTS (SELECT 1 FROM lake_settings WHERE booking_profile_id = profiles.id)
+	`, id, userID)
 	if err != nil {
 		return fmt.Errorf("delete profile: %w", mapWriteError(err))
 	}
-	return requireAffected(result)
+	if err := s.classifyOwnedGuardedUpdate(ctx, "profiles", userID, id, result); errors.Is(err, ErrConflict) {
+		return fmt.Errorf("%w: choose another booking account or clear the lake's booking account before deleting this sign-in", err)
+	} else {
+		return err
+	}
 }
 
 func profileFromInput(id, userID int64, input ProfileInput) model.Profile {

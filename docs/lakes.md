@@ -1,7 +1,7 @@
 # Lake settings and booking providers
 
 Lake Pass Bot separates a destination's rules from the service used to book it.
-The lake selector currently offers **Buntzen Lake**, booked through **Yodel**.
+The lake catalog currently offers **Buntzen Lake**, booked through **Yodel**.
 Adding an entry does not by itself establish that another destination works.
 
 ## Where settings live
@@ -14,15 +14,23 @@ another account or the server's deployment configuration.
 | --- | --- |
 | **Home** | A visual overview of your lake connections, booking requests, and jobs. Open a lake to complete setup or manage its connection. |
 | **OTP sources** | BlueBubbles or Twilio configuration, connection checks, pairing, and the default source for newly queued jobs. |
-| **Settings** | Preparation and sign-in deadlines, availability check window, and retry delay defaults shared across lakes; browser channel, headless mode, and action timeout defaults for new sign-ins; links to account management. |
-| **Lakes → a lake** | Connection status and provider sign-in setup, plus vehicle keyword, release schedule, pass preferences, and booking URLs. For Buntzen Lake, the connection uses Yodel. |
-| **Bookings** | Each visit's lake, Yodel sign-in, date, saved vehicle keyword and other defaults, confirmation mode, and automation choices. |
+| **Settings** | Preparation and sign-in deadlines, availability check window, retry delays, and final confirmation preferences shared across lakes; browser defaults for new sign-ins; account management. |
+| **Lakes → a lake** | Connection status, provider sign-in setup, the account to use for bookings, vehicle keyword, release schedule, default pass preferences, and booking URLs. For Buntzen Lake, the connection uses Yodel. |
+| **Bookings** | A Book action for each ready lake, followed by a visit date and pass choices. Older saved requests can be viewed or deleted here. |
+| **Jobs** | Queued and completed booking attempts, progress, approval, cancellation, and retained history. |
 
 Provider sign-ins are managed from their lake page. Buntzen Lake contains its
 Yodel connection, including sign-in names, mobile numbers, enabled state, and
 the action to connect. Home presents lake status and links back to that setup;
 it does not expose Yodel account management as a global task. Accounts without
 a configured lake connection are directed to Lakes.
+
+The sole enabled account connected to a lake is used automatically. When several
+accounts are available, select **Use for bookings** on one account's card on the
+lake page. Its card then shows **Used for bookings**. A disabled preferred
+account requires attention; it does not silently switch to another identity.
+Accounts must belong to the signed-in user and the selected lake and provider.
+Sharing a provider does not connect an account to another lake automatically.
 
 Existing sign-in IDs and credentials remain separate; the app does not merge
 identities or reset existing sessions. The sign-in form edits only the name,
@@ -40,45 +48,65 @@ profile and inbox locks still serialize work on shared resources, and sources
 cannot be selected from another account. Legacy callers without an account
 preference retain their existing source association.
 
+## Booking a visit
+
+Set up the connection and vehicle on the lake page, then open **Bookings** and
+choose **Book** for that lake. The form asks only for the visit date and pass
+preferences. It shows the selected account for context and links to lake setup;
+it has no account selector, vehicle override, or advanced release and URL fields.
+
+Pressing **Book** creates a job and opens its page. Before the pass release,
+the job follows the configured preparation and release window. After release,
+it starts as soon as a worker is available and always requires manual approval.
+Future release jobs use **Settings → Booking confirmation**, which defaults to
+manual approval and can be changed to automatic confirmation. The new flow
+does not create another reusable preset or saved request to maintain.
+
 ## Defaults and existing bookings
 
-New sign-ins copy the account's browser defaults from **Settings**. New booking
-requests combine the selected lake's personal defaults with the account's
-preparation and retry defaults. Each falls back to its built-in defaults when
-none have been saved. Selecting another lake in a booking form loads that lake's
-defaults and compatible Yodel sign-ins. The request can override those values for the
-visit. On an existing editable request, **Use lake defaults** loads the current
-lake defaults into the form; saving applies them to that request. Changing the
-selected lake or applying lake defaults preserves the request's preparation and
-retry timing. Only new requests copy the account's current timing defaults.
-
 Lake defaults include the vehicle keyword, local timezone, release time and
-number of days before the visit, pass preference order, and pass URLs. Preparation and retry timing
-belong to the account's global **Settings**. Supported pass types and provider
-identity remain defined by the catalog. Custom URLs must still use an
-operator-approved origin.
+number of days before the visit, pass preference order, and pass URLs.
+Preparation, retry timing, and final confirmation preferences belong to the
+account's global **Settings**. Supported pass types and provider identity remain
+defined by the catalog. Custom URLs must still use an operator-approved origin.
 
-Each saved booking stores its own values, including the vehicle keyword and
-release-day offset. Changing or resetting personal defaults never rewrites existing sign-ins,
-bookings, or queued jobs. **Reset to built-in defaults** removes only the current
-account's override for that lake; global preparation and retry settings remain
-unchanged. Existing bookings retain their original vehicle choice and release
-schedule. Older bookings receive their former profile's vehicle keyword during
-migration; credentials, identities, schedules, and job history are retained.
+New sign-ins copy the account's browser defaults. Each new booking captures the
+current lake and account defaults together with the chosen date and passes.
+Saving or resetting preferences never rewrites existing sign-ins, saved
+requests, or queued jobs. **Reset saved preferences** restores the lake defaults
+while preserving the chosen booking account and global settings.
+
+Requests from before this flow remain under **Bookings → Saved requests** with
+their original values and scheduling flags. They can be viewed or deleted;
+**Book another day** starts a new visit using current lake defaults. To delete a
+saved request, open it and choose **Delete saved request**. A request with a
+pending job must wait for completion or have that job cancelled from Jobs first.
+Deletion stops future automatic queueing from the request while preserving its
+completed job history and reservation records. It cannot bypass a confirmed or
+unresolved booking for the same account and date.
+
+`SCHEDULES_ENABLED` controls automatic job creation from legacy saved requests.
+Pressing **Book** explicitly creates a job regardless of that switch. Already
+queued jobs keep their saved timing and confirmation mode; stop them from Jobs
+when needed. Advanced CLI sign-in checks, dry runs, and booking commands remain
+available for existing request IDs; see [Common commands](../README.md#common-commands).
 
 ## Current boundaries
 
 - `internal/destinations/catalog.go` defines the lake catalog and resolves stable
   lake IDs. `internal/destinations/buntzen.go` owns this lake's URLs, supported
   passes, local timezone, and release defaults.
-- Sign-ins persist a `provider_id`; booking requests persist `lake_id`,
-  `vehicle_keyword`, and `release_days_before`. Profile lake context routes
-  provider setup to its lake; legacy vehicle fields remain for migration
-  compatibility. Account and lake default tables
-  are scoped by `user_id`. The engine resolves the destination
-  before dispatching a job and sends its lake and provider IDs to the worker.
-  The scheduler uses the booking's saved release policy rather than looking up
-  current personal defaults.
+- Sign-ins persist their lake and provider identity. Lake settings store an
+  optional preferred `booking_profile_id`, protected by ownership and lake
+  checks. An explicitly selected account cannot be deleted until that choice
+  is deliberately changed or cleared. Account and lake settings are scoped by
+  `user_id`; legacy profile vehicle fields remain for migration compatibility.
+- New booking actions atomically save a `kind = 'snapshot'` booking request and
+  its job. Legacy requests retain `kind = 'saved'`. Snapshots capture the lake,
+  account, vehicle, date, pass order, release rules, and timing; they are cleaned
+  up with their final retained job. Reservation records remain independent of
+  that cleanup. The engine dispatches the saved lake and provider to the worker,
+  and the scheduler uses the saved release policy.
 - `actions/src/lake_pass_actions/lakes/` defines destination-specific pass labels
   and matching rules. Its Buntzen module owns those choices.
 - `actions/src/lake_pass_actions/providers/yodel/` owns Yodel browser behavior:

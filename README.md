@@ -1,13 +1,13 @@
 # Lake Pass Bot
 
-Lake Pass Bot is a self-hosted app for planning and booking lake passes. Choose a supported lake, connect its booking provider, and manage requests from one place. A Go service provides the web UI, scheduling, job state, and encrypted storage; separate supervised Python/Playwright processes perform the browser actions.
+Lake Pass Bot is a self-hosted app for planning and booking lake passes. Set up a supported lake once, choose a date and passes, then follow the booking in Jobs. A Go service provides the web UI, scheduling, job state, and encrypted storage; separate supervised Python/Playwright processes perform the browser actions.
 
 > [!WARNING]
 > The default private HTTP mode sends traffic, including temporary OTPs, without encryption. Before exposing the app through an HTTPS tunnel, complete setup privately and configure [public HTTPS mode](docs/public-exposure.md). The app uses its own accounts; Cloudflare Access is optional. See [Security](SECURITY.md) for account boundaries and remaining runtime trust.
 
 ## Features
 
-- Scheduled and on-demand bookings with dry-run, manual approval, and automatic confirmation modes.
+- Scheduled and on-demand bookings with manual approval or automatic confirmation; advanced CLI commands also support dry runs.
 - Configurable pass priority and an immediate, manually approved checkout for passes already released.
 - Administrator and member accounts with isolated Yodel sign-ins, OTP sources, personal defaults, requests, and job history. Change your own username or password from Account.
 - Lake connection status on Home, provider sign-in within each lake, an independent OTP sources page, and general defaults in Settings.
@@ -105,27 +105,35 @@ Keep `SCHEDULES_ENABLED=false` while completing these steps:
 1. Open **Lakes**, choose **Buntzen Lake**, and follow its connection setup. Open **OTP sources** and configure BlueBubbles or Twilio. For BlueBubbles, enter its operator-approved server URL and password, then use **Test connection**. The first source becomes your default; use **Make default** to select another source.
 2. Return to **Lakes → Buntzen Lake**, choose **Add Yodel account**, enter a name and the 10-digit Canadian or US mobile number used by Yodel, and save it enabled. Set your preferred browser defaults in **Settings** before adding a sign-in if needed.
 3. Choose **Sign in to Yodel** in that lake’s Connection section. With BlueBubbles, select the fresh OTP candidate after Yodel sends a code. This signs in without creating a booking request or reserving a pass.
-4. Open **Lakes**, choose a lake, and save its vehicle keyword and booking rules. Then create a request in **Bookings**, choosing the lake, Yodel sign-in, and visit date. Choose up to three pass priorities: All-day, Afternoon, Morning, or None. The bot tries them in your saved order; select at least one pass without duplicates.
-5. Run **Sign-in check**, then **Booking rehearsal**, from the booking card. Neither proves a pass can be issued.
-6. For already released passes, choose **Book now · manual approval**. Approve only the intended reservation, then verify the issued pass in Yodel. See [Testing a live booking](docs/live-testing.md) for timing, expiry, cancellation and retry behavior.
-7. Test **Queue for release** separately before relying on release timing or automatic confirmation. Verify the OTP provider still works after its host restarts before enabling unattended schedules.
+4. On the lake page, save its vehicle keyword and booking preferences. The sole enabled account is used automatically. If you added multiple accounts for this lake, choose **Use for bookings** on the one to use. Preparation, retry timing, and final confirmation preferences belong in **Settings**; keep **Manual approval** selected while testing.
+5. Open **Bookings** and choose **Book** for the lake. Pick the visit date and up to three pass priorities: All-day, Afternoon, Morning, or None. Select at least one pass without duplicates, then press **Book**. The app takes you directly to the new job.
+6. If passes have not released, the job waits for the lake's preparation and release schedule. If they have released, it starts as soon as a worker is available and always requires manual approval. Review the intended date, pass, and vehicle before approving, then verify the issued pass in Yodel. See [Testing a live booking](docs/live-testing.md) for timing, expiry, cancellation, and retry behavior.
+7. Test a future release separately before relying on release timing or automatic confirmation. Verify the OTP provider still works after its host restarts. **Book** explicitly queues a job even with `SCHEDULES_ENABLED=false`; that switch only controls automatic creation of jobs from older saved requests. Use **Cancel job** in Jobs to stop queued work.
 
 **Home** shows lake connection status, upcoming visits, and recent jobs. Accounts without a configured lake connection are directed to **Lakes** to begin setup. **OTP sources** is an independent page for
 configuring inbox connections and choosing the account's default source.
-**Settings** holds personal preparation and retry timing shared across lakes,
-browser defaults, and links to account management.
-**Lakes** holds each lake’s provider connection, vehicle keyword, release schedule, pass preferences,
-and booking URLs. Sign-in URLs are managed internally. The visit date,
-Yodel sign-in, vehicle snapshot, and confirmation choice belong to the request.
+**Settings** holds personal preparation, retry timing, and final confirmation
+preferences shared across lakes, plus browser defaults and account management.
+**Lakes** holds each lake's booking account, vehicle keyword, release schedule,
+pass preferences, and booking URLs. Sign-in URLs are managed internally.
+The **Book** form asks only for the visit date and pass choices; update setup on
+the lake page or in Settings instead of overriding it for an individual visit.
 
-New Yodel sign-ins copy the account's browser defaults. New booking requests copy the
-selected lake's defaults and the account's preparation and retry timing. Each
-request can override those values for that visit. Changing defaults
-does not change existing sign-ins, requests, or queued jobs. Resetting lake
-defaults removes only that account's saved lake overrides. Newly queued jobs
+New Yodel sign-ins copy the account's browser defaults. Each booking job captures
+the selected lake's settings, the visit choices, and the account's timing and
+confirmation preferences. Changing defaults does not change existing sign-ins,
+saved requests, or queued jobs. Resetting lake preferences preserves the chosen
+booking account. Newly queued jobs
 capture the selected default OTP source; changing that default does not reroute
 already queued jobs. Multiple Yodel sign-ins can use one owned source, with
 browser and inbox locks preventing concurrent use of the same resources.
+
+Requests created before this flow remain under **Bookings → Saved requests**.
+Open one to view it or choose **Delete saved request**. Deletion stops future
+automatic queueing from that request and preserves completed job history and
+reservation records. Cancel any pending job or wait for it to finish before
+deleting. New visits are tracked in Jobs without creating another reusable
+request to manage.
 
 Before a booking, the Yodel cart must be empty. The bot checks that adding the
 selected pass produces exactly one item of quantity one, then rechecks it before
@@ -157,7 +165,11 @@ Do not share browser profiles between Docker and macOS or run the same Yodel ide
 
 ## Common commands
 
-Run CLI commands against the same appdata used by the service. In Docker Compose:
+Advanced CLI commands remain available for an existing booking request ID,
+including a sign-in check and a dry run that stops before adding a pass to the
+cart. These actions are separate from the web **Book** flow. Replace `1` below
+with the intended request ID and run against the same appdata used by the service.
+In Docker Compose:
 
 ```bash
 docker compose exec lake-pass-bot lake-pass-bot doctor

@@ -289,6 +289,7 @@ func (s *Store) DeleteMember(ctx context.Context, id int64, confirmedUsername st
 		"DELETE FROM job_events WHERE user_id = ?",
 		"DELETE FROM jobs WHERE user_id = ?",
 		"DELETE FROM booking_requests WHERE user_id = ?",
+		"DELETE FROM lake_settings WHERE user_id = ?",
 		"DELETE FROM profiles WHERE user_id = ?",
 		"DELETE FROM otp_sources WHERE user_id = ?",
 		"DELETE FROM sessions WHERE user_id = ?",

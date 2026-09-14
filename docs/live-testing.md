@@ -4,41 +4,64 @@ A passing local test or a healthy container does not prove that Yodel issued a
 parking pass. A successful live test needs a completed job and the corresponding
 Yodel confirmation or wallet pass matching the intended date, pass and vehicle.
 
-1. Open **Lakes → Buntzen Lake** and configure its connection. Configure the
-   shared inbox on **OTP sources**, then return to the lake to add a Yodel account.
-   Pair BlueBubbles with that account if used.
-2. Create a booking request for that profile, select the date and pass preference
-   order, then run **Sign-in check** and **Booking rehearsal**. A dry run checks login, the
-   vehicle and pass pages; it stops before adding a pass to the cart.
-3. For passes already released, choose **Book now · manual approval**. This
-   always requires your approval immediately before final confirmation, even
-   if the request uses automatic confirmation for release jobs. Review the
-   displayed date, pass and vehicle before approving.
+1. Configure BlueBubbles or Twilio on **OTP sources** and select the default
+   inbox. Open **Lakes → Buntzen Lake**, add the Yodel account, then choose
+   **Sign in to Yodel** to verify the connection without reserving a pass.
+2. Save the vehicle keyword and booking preferences on the lake page. If it has
+   multiple enabled accounts, choose **Use for bookings** on the intended one;
+   a sole enabled account is selected automatically. In **Settings**, keep
+   **Booking confirmation → Manual approval** selected while testing and review
+   the preparation and retry timing.
+3. Open **Bookings**, choose **Book** for the lake, select a date and pass
+   preference order, and press **Book**. The app opens the new job. It schedules
+   preparation for an upcoming release or starts checking already released
+   passes as soon as a worker is available. Already released passes always
+   require approval, even if automatic confirmation is selected globally.
+   Review the displayed date, pass, and vehicle before approving.
 4. Check the completed job and Yodel's issued pass. If the outcome is uncertain,
    inspect Yodel's wallet or confirmation before retrying. The application keeps
    the profile/date reservation after confirmation starts to prevent duplicates.
 
-Book now has a fixed 15-minute limit from enqueue, including queue time, OTP
+The immediate path has a fixed 15-minute limit from enqueue, including queue time, OTP
 retrieval and approval. Restarting the application does not extend it or retry
 an interrupted action. Availability polling also respects the request's shorter
 poll limit. Expired or cancelled attempts that never began confirmation may be
 explicitly retried. The application does not clear a pre-existing Yodel cart;
 inspect and clear it yourself before another attempt.
 
-**Queue for release** retains the saved preparation, authentication and release
-window, including its saved manual or automatic confirmation mode. Testing Book
-now verifies the immediate checkout path. A separate release-time test is needed
-to verify session warming and the release polling window. Keep unattended
-scheduling disabled while testing. `SCHEDULES_ENABLED=false` only prevents
-automatic creation of jobs. Jobs created with **Queue for release** still run
-with their saved confirmation mode, including automatic final confirmation.
-Use **Cancel job** on the job page to stop a queued booking.
+For a future release, **Book** captures the current preparation, authentication,
+and release window together with the global manual or automatic confirmation
+preference. A separate release-time test is needed to verify session warming and
+release polling; an immediate checkout test does not exercise that timing.
+Keep unattended scheduling disabled while testing. `SCHEDULES_ENABLED=false`
+prevents automatic creation of jobs from older saved requests. Jobs explicitly
+created with **Book** still run, including automatic final confirmation for
+future release jobs when selected in Settings. Use **Cancel job** on the job
+page to stop queued work. Changing defaults does not change an existing job.
 
-BC Hydro says cancelled passes may become available throughout the day, so a
-checkout test does not require waiting for the 7 a.m. release. For 2026,
-reservations are required from May 14 through September 7; the daily release is
-at 7 a.m. for the following day. Check the current
+Check the current season dates and release rules in the
 [BC Hydro reservation rules](https://www.bchydro.com/community/recreation_areas/buntzen_lake.html)
-and [2026 announcement](https://www.bchydro.com/news/press_centre/news_releases/2026/buntzen-lake-summer-parking-reservations.html)
 before choosing a date. Actual inventory can only be determined from Yodel.
 Cancel an unused test pass through its reservation confirmation.
+
+## Advanced checks for an existing request
+
+The CLI retains sign-in checks and dry runs for an existing booking request ID.
+For an older saved request, its ID appears in the request page URL. Replace `1`
+with that ID and run against the same appdata as the service:
+
+```bash
+docker compose exec lake-pass-bot lake-pass-bot auth-check --booking 1
+docker compose exec lake-pass-bot lake-pass-bot dry-run --booking 1
+```
+
+A dry run checks login, the vehicle, and pass pages, then stops before adding a
+pass to the cart. Neither command proves that a pass can be issued. These
+advanced actions use the request's saved inputs; the web **Book** form creates a
+new visit from current lake and account settings. See
+[Common commands](../README.md#common-commands) for the CLI's booking modes.
+
+Older requests can be removed from **Bookings → Saved requests** after pending
+jobs finish or are cancelled. Deleting a request preserves completed job
+history and reservation records; it does not release an uncertain or confirmed
+account/date reservation or cancel an issued Yodel pass.
