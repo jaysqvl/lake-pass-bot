@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func createImmediateWebBooking(t *testing.T, fixture webFixture, ownerID int64, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	booking, err := resources.CreateBookingRequest(ctx, model.BookingRequest{
+	booking, err := createLegacyBooking(ctx, fixture, ownerID, model.BookingRequest{
 		Name: name + " booking", ProfileID: profile.ID, Enabled: true, ScheduleEnabled: true,
 		TargetDate: time.Now().UTC().Format(time.DateOnly), Timezone: "UTC", ReleaseTime: "07:00",
 		PrepMinutesBefore: 30, AuthDeadlineMinutesBefore: 5, PollDeadlineSeconds: 120, PollMinSeconds: 1, PollMaxSeconds: 2,
@@ -37,13 +38,28 @@ func createImmediateWebBooking(t *testing.T, fixture webFixture, ownerID int64, 
 	return profile, booking
 }
 
+func createReadyWebLake(t *testing.T, fixture webFixture, ownerID int64, name string) model.Profile {
+	t.Helper()
+	profile := createLakeBookingAccount(t, fixture, ownerID, name, "buntzen", true)
+	settings := settingsPageDefaults(t, fixture)
+	settings.VehicleKeyword, settings.Timezone = "Example vehicle", "UTC"
+	if _, err := fixture.store.ForUser(ownerID).SaveLakeSettings(context.Background(), settings); err != nil {
+		t.Fatal(err)
+	}
+	return profile
+}
+
 func TestBookNowHTTPForcesManualApprovalAndRejectsDuplicate(t *testing.T) {
 	fixture := newWebFixture(t)
-	_, booking := createImmediateWebBooking(t, fixture, fixture.admin.ID, "immediate-http", true)
+	createReadyWebLake(t, fixture, fixture.admin.ID, "immediate-http")
+	settings := model.DefaultAccountSettings()
+	settings.DefaultConfirmationMode = model.RunModeAuto
+	if _, err := fixture.store.ForUser(fixture.admin.ID).SaveAccountSettings(context.Background(), settings); err != nil {
+		t.Fatal(err)
+	}
 	cookies := loginCookies(t, fixture)
-	form := url.Values{"csrf_token": {csrfFrom(cookies)}, "command": {"book"}, "timing": {"now"}, "mode": {"auto"}}
-	path := fmt.Sprintf("/bookings/%d/run", booking.ID)
-	response := serveForm(fixture, http.MethodPost, path, cookies, form)
+	form := url.Values{"csrf_token": {csrfFrom(cookies)}, "lake_id": {"buntzen"}, "target_date": {time.Now().UTC().Format(time.DateOnly)}, "pass_priority_1": {"all_day"}, "mode": {"auto"}}
+	response := serveForm(fixture, http.MethodPost, "/bookings/new", cookies, form)
 	if response.Code != http.StatusSeeOther {
 		t.Fatalf("book now response=%d body=%q", response.Code, response.Body.String())
 	}
@@ -55,22 +71,13 @@ func TestBookNowHTTPForcesManualApprovalAndRejectsDuplicate(t *testing.T) {
 	if !job.RunImmediately || job.Command != model.CommandBook || job.RunMode != model.RunModeManual || job.ExpiresAt == nil || job.ExpiresAt.Sub(job.DueAt) != 15*time.Minute {
 		t.Fatalf("posted automatic mode escaped manual immediate policy: %+v", job)
 	}
-	response = serveForm(fixture, http.MethodPost, path, cookies, form)
-	if response.Code != http.StatusSeeOther || !strings.Contains(response.Header().Get("Location"), "notice=queue-pending") {
+	response = serveForm(fixture, http.MethodPost, "/bookings/new", cookies, form)
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "already has a booking or pending job for that date") {
 		t.Fatalf("duplicate response=%d", response.Code)
-	}
-	for _, invalid := range []url.Values{
-		{"csrf_token": {csrfFrom(cookies)}, "command": {"auth-check"}, "timing": {"now"}},
-		{"csrf_token": {csrfFrom(cookies)}, "command": {"book"}, "timing": {"whenever"}},
-	} {
-		response = serveForm(fixture, http.MethodPost, path, cookies, invalid)
-		if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/bookings?notice=booking-action" {
-			t.Fatalf("invalid timing response=%d body=%q", response.Code, response.Body.String())
-		}
 	}
 }
 
-func TestBookingPagesKeepLegacyRequestsAndActionsOwnerScoped(t *testing.T) {
+func TestRetiredBookingRequestsHaveNoUIOrRoutesForAnyOwner(t *testing.T) {
 	fixture := newWebFixture(t)
 	_, booking := createImmediateWebBooking(t, fixture, fixture.admin.ID, "selected", true)
 	member, err := fixture.store.CreateMember(context.Background(), store.CreateUserInput{Username: "another-owner", Password: "a long member password"})
@@ -80,24 +87,33 @@ func TestBookingPagesKeepLegacyRequestsAndActionsOwnerScoped(t *testing.T) {
 	foreign, foreignBooking := createImmediateWebBooking(t, fixture, member.ID, "foreign", true)
 	cookies := loginCookies(t, fixture)
 	page := serveForm(fixture, http.MethodGet, "/bookings", cookies, nil)
-	for _, want := range []string{"Buntzen Lake", "/bookings/new?lake_id=buntzen", booking.Name, fmt.Sprintf(`href="/bookings/%d"`, booking.ID)} {
+	for _, want := range []string{"Buntzen Lake", "/bookings/new?lake_id=buntzen"} {
 		if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), want) {
 			t.Fatalf("booking page missing %q: %d body=%q", want, page.Code, page.Body.String())
 		}
 	}
-	if strings.Contains(page.Body.String(), foreign.Name) || strings.Contains(page.Body.String(), foreignBooking.Name) || strings.Contains(page.Body.String(), `name="timing"`) {
-		t.Fatal("bookings exposed another account or retained the old direct-run form")
-	}
-	form := url.Values{"csrf_token": {csrfFrom(cookies)}, "command": {"book"}, "timing": {"now"}}
-	for _, suffix := range []string{"/run", "/delete"} {
-		response := serveForm(fixture, http.MethodPost, fmt.Sprintf("/bookings/%d%s", foreignBooking.ID, suffix), cookies, form)
-		if response.Code != http.StatusNotFound {
-			t.Fatalf("foreign booking %s POST=%d", suffix, response.Code)
+	for _, unwanted := range []string{booking.Name, foreign.Name, foreignBooking.Name, "Saved requests", "View request", "Delete saved request", `name="timing"`} {
+		if strings.Contains(page.Body.String(), unwanted) {
+			t.Fatalf("bookings retained old UI or exposed another account: %s", unwanted)
 		}
 	}
-	page = serveForm(fixture, http.MethodGet, fmt.Sprintf("/bookings/%d", foreignBooking.ID), cookies, nil)
-	if page.Code != http.StatusNotFound {
-		t.Fatalf("foreign saved request GET=%d", page.Code)
+	form := url.Values{"csrf_token": {csrfFrom(cookies)}, "command": {"book"}, "timing": {"now"}}
+	for _, request := range []model.BookingRequest{booking, foreignBooking} {
+		for _, suffix := range []string{"", "/run", "/delete"} {
+			method := http.MethodPost
+			if suffix == "" {
+				method = http.MethodGet
+			}
+			response := serveForm(fixture, method, fmt.Sprintf("/bookings/%d%s", request.ID, suffix), cookies, form)
+			if response.Code != http.StatusNotFound {
+				t.Fatalf("retired booking %d %s %s=%d", request.ID, method, suffix, response.Code)
+			}
+		}
+		retained, err := fixture.store.ForUser(request.UserID).GetBookingRequest(context.Background(), request.ID)
+		jobs, jobsErr := fixture.store.ForUser(request.UserID).ListJobs(context.Background(), 10)
+		if err != nil || jobsErr != nil || !reflect.DeepEqual(retained, request) || len(jobs) != 0 {
+			t.Fatalf("retired route changed records: request=%+v jobs=%+v errors=%v/%v", retained, jobs, err, jobsErr)
+		}
 	}
 }
 
@@ -125,7 +141,7 @@ func TestExecutionSnapshotCannotBeReplayedThroughLegacyRunRoute(t *testing.T) {
 	}
 }
 
-func TestSavedBookingDetailsExplainPendingDeletionAndRetainHistory(t *testing.T) {
+func TestRetiredRequestRoutesPreservePendingAndCompletedJobHistory(t *testing.T) {
 	fixture := newWebFixture(t)
 	_, booking := createImmediateWebBooking(t, fixture, fixture.admin.ID, "action-state", true)
 	ctx := context.Background()
@@ -135,68 +151,72 @@ func TestSavedBookingDetailsExplainPendingDeletionAndRetainHistory(t *testing.T)
 		t.Fatal(err)
 	}
 	cookies := loginCookies(t, fixture)
-	path := fmt.Sprintf("/bookings/%d", booking.ID)
-	page := serveForm(fixture, http.MethodGet, path, cookies, nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), booking.Name) || !strings.Contains(page.Body.String(), "before deleting this request") || !strings.Contains(page.Body.String(), `type="submit" disabled`) || !strings.Contains(page.Body.String(), fmt.Sprintf(`href="/jobs/%d"`, job.ID)) {
-		t.Fatalf("pending request deletion was not explained: %d %s", page.Code, page.Body.String())
-	}
 	form := url.Values{"csrf_token": {csrfFrom(cookies)}}
-	response := serveForm(fixture, http.MethodPost, path+"/delete", cookies, form)
-	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "pending job") {
-		t.Fatalf("pending deletion did not explain the conflict: %d %s", response.Code, response.Body.String())
-	}
-	if err := resources.RequestJobCancellation(ctx, job.ID); err != nil {
-		t.Fatal(err)
-	}
-	page = serveForm(fixture, http.MethodGet, path, cookies, nil)
-	if page.Code != http.StatusOK || strings.Contains(page.Body.String(), `type="submit" disabled`) {
-		t.Fatalf("completed job still blocked deleting saved request: %d %s", page.Code, page.Body.String())
-	}
-	response = serveForm(fixture, http.MethodPost, path+"/delete", cookies, form)
-	if response.Code != http.StatusSeeOther {
-		t.Fatalf("delete completed request=%d %s", response.Code, response.Body.String())
-	}
-	if retained, err := resources.GetJob(ctx, job.ID); err != nil || retained.Status != model.JobCancelled {
-		t.Fatalf("deleting request changed completed job: %+v err=%v", retained, err)
-	}
-	page = serveForm(fixture, http.MethodGet, path, cookies, nil)
-	if page.Code != http.StatusNotFound {
-		t.Fatalf("removed request remained accessible as saved settings: %d", page.Code)
+	for _, completed := range []bool{false, true} {
+		if completed {
+			if err := resources.RequestJobCancellation(ctx, job.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+		before, err := resources.GetJob(ctx, job.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		events, err := resources.ListJobEvents(ctx, job.ID, 0, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, suffix := range []string{"", "/delete", "/run"} {
+			method := http.MethodPost
+			if suffix == "" {
+				method = http.MethodGet
+			}
+			response := serveForm(fixture, method, fmt.Sprintf("/bookings/%d%s", booking.ID, suffix), cookies, form)
+			if response.Code != http.StatusNotFound {
+				t.Fatalf("retired route %s=%d", suffix, response.Code)
+			}
+		}
+		retained, err := resources.GetJob(ctx, job.ID)
+		retainedEvents, eventsErr := resources.ListJobEvents(ctx, job.ID, 0, 100)
+		if err != nil || eventsErr != nil || !reflect.DeepEqual(retained, before) || !reflect.DeepEqual(retainedEvents, events) {
+			t.Fatalf("retired route changed job history: job=%+v events=%+v errors=%v/%v", retained, retainedEvents, err, eventsErr)
+		}
+		page := serveForm(fixture, http.MethodGet, fmt.Sprintf("/jobs/%d", job.ID), cookies, nil)
+		if page.Code != http.StatusOK {
+			t.Fatalf("job history inaccessible: %d %s", page.Code, page.Body.String())
+		}
 	}
 }
 
-func TestBookNowExplainsUnreleasedAndExpiredDates(t *testing.T) {
-	fixture := newWebFixture(t)
-	_, booking := createImmediateWebBooking(t, fixture, fixture.admin.ID, "immediate-dates", true)
-	cookies := loginCookies(t, fixture)
-	form := url.Values{"csrf_token": {csrfFrom(cookies)}, "command": {"book"}, "timing": {"now"}}
+func TestBookingAutomaticallySchedulesFutureDatesAndRejectsPastDates(t *testing.T) {
 	for _, test := range []struct {
-		name    string
-		days    int
-		message string
+		name   string
+		days   int
+		status int
 	}{
-		{"unreleased", 2, "Queue for release instead"},
-		{"past", -1, "Choose today or a future date"},
+		{"unreleased", 2, http.StatusSeeOther},
+		{"past", -1, http.StatusUnprocessableEntity},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			booking.TargetDate = time.Now().UTC().AddDate(0, 0, test.days).Format(time.DateOnly)
-			var err error
-			booking, err = fixture.store.ForUser(fixture.admin.ID).UpdateBookingRequest(context.Background(), booking)
+			fixture := newWebFixture(t)
+			createReadyWebLake(t, fixture, fixture.admin.ID, "booking-dates")
+			cookies := loginCookies(t, fixture)
+			form := url.Values{"csrf_token": {csrfFrom(cookies)}, "lake_id": {"buntzen"}, "target_date": {time.Now().UTC().AddDate(0, 0, test.days).Format(time.DateOnly)}, "pass_priority_1": {"all_day"}}
+			response := serveForm(fixture, http.MethodPost, "/bookings/new", cookies, form)
+			if response.Code != test.status {
+				t.Fatalf("date response=%d: %s", response.Code, response.Body.String())
+			}
+			jobs, err := fixture.store.ForUser(fixture.admin.ID).ListJobs(context.Background(), 10)
 			if err != nil {
 				t.Fatal(err)
 			}
-			response := serveForm(fixture, http.MethodPost, fmt.Sprintf("/bookings/%d/run", booking.ID), cookies, form)
-			if response.Code != http.StatusSeeOther {
-				t.Fatalf("date response=%d", response.Code)
-			}
-			page := serveForm(fixture, http.MethodGet, response.Header().Get("Location"), cookies, nil)
-			if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), test.message) || !strings.Contains(page.Body.String(), `role="alert"`) {
-				t.Fatalf("date notification=%d body=%q", page.Code, page.Body.String())
+			if test.days > 0 {
+				if len(jobs) != 1 || jobs[0].RunImmediately || !jobs[0].DueAt.After(time.Now()) {
+					t.Fatalf("future date was not scheduled: %+v", jobs)
+				}
+			} else if len(jobs) != 0 || !strings.Contains(response.Body.String(), "Choose today or a future visit date") || !strings.Contains(response.Body.String(), `role="alert"`) {
+				t.Fatalf("past date was not rejected: jobs=%+v body=%s", jobs, response.Body.String())
 			}
 		})
-	}
-	jobs, err := fixture.store.ForUser(fixture.admin.ID).ListJobs(context.Background(), 10)
-	if err != nil || len(jobs) != 0 {
-		t.Fatalf("invalid dates queued jobs=%+v err=%v", jobs, err)
 	}
 }

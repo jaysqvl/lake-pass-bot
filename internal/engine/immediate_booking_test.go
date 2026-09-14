@@ -14,6 +14,7 @@ import (
 	"github.com/jaysqvl/lake-pass-bot/internal/otp/bluebubbles"
 	"github.com/jaysqvl/lake-pass-bot/internal/scheduler"
 	"github.com/jaysqvl/lake-pass-bot/internal/store"
+	"github.com/jaysqvl/lake-pass-bot/internal/testutil/bookingfixture"
 )
 
 func TestBookNowAcceptsReleasedAvailabilityWithFixedManualDeadline(t *testing.T) {
@@ -55,7 +56,7 @@ func TestImmediateExpiryCancelsProviderSetup(t *testing.T) {
 	ctx := context.Background()
 	booking := fixture.booking
 	booking.TargetDate = time.Now().UTC().Format(time.DateOnly)
-	booking, err := fixture.resources.UpdateBookingRequest(ctx, booking)
+	booking, err := updateLegacyEngineBooking(ctx, fixture, booking)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,20 +169,20 @@ func TestBookNowCannotBypassProfileDateReservation(t *testing.T) {
 	ctx := context.Background()
 	booking := fixture.booking
 	booking.TargetDate = time.Now().UTC().Format(time.DateOnly)
-	booking, err := fixture.resources.UpdateBookingRequest(ctx, booking)
+	booking, err := updateLegacyEngineBooking(ctx, fixture, booking)
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := fixture.engine.QueueBookingNow(ctx, fixture.user.ID, booking.ID)
+	first, err := fixture.engine.QueueLakeBooking(ctx, fixture.user.ID, booking)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.engine.QueueBookingNow(ctx, fixture.user.ID+1, booking.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := fixture.engine.QueueLakeBooking(ctx, fixture.user.ID+1, booking); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("foreign immediate booking error = %v", err)
 	}
 	other := booking
 	other.Name = "Another request for the same date"
-	other, err = fixture.resources.CreateBookingRequest(ctx, other)
+	other, err = bookingfixture.Create(ctx, fixture.databasePath, fixture.resources, other)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +195,7 @@ func TestBookNowCannotBypassProfileDateReservation(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if _, err := fixture.engine.QueueBookingNow(ctx, fixture.user.ID, other.ID); !errors.Is(err, store.ErrConflict) {
+		if _, err := fixture.engine.QueueLakeBooking(ctx, fixture.user.ID, other); !errors.Is(err, store.ErrConflict) {
 			t.Fatalf("duplicate of %s immediate job error = %v", status, err)
 		}
 		if _, err := fixture.resources.EnqueueJob(ctx, store.EnqueueJobParams{BookingRequestID: &other.ID, Command: model.CommandBook, RunMode: model.RunModeAuto}); !errors.Is(err, store.ErrConflict) {

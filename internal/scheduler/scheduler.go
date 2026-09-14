@@ -41,11 +41,3 @@ func WindowFor(request model.BookingRequest) (Window, error) {
 		PollEndsAt:     release.Add(time.Duration(request.PollDeadlineSeconds) * time.Second),
 	}, nil
 }
-
-func ShouldQueue(now time.Time, window Window) bool {
-	return !now.Before(window.PrepAt) && now.Before(window.PollEndsAt)
-}
-
-func DedupKey(request model.BookingRequest) string {
-	return fmt.Sprintf("booking:%d:%s", request.ID, request.TargetDate)
-}

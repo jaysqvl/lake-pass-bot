@@ -38,7 +38,7 @@ func TestBrowserPlainErrorsRenderSafePagesAndPreserveHTTPHeaders(t *testing.T) {
 					}
 				}
 			})))
-			request := httptest.NewRequest(http.MethodPost, "http://example.test/bookings/123/run?notice=queue-pending&return=https://untrusted.invalid", nil)
+			request := httptest.NewRequest(http.MethodPost, "http://example.test/bookings/new?notice=queue-pending&return=https://untrusted.invalid", nil)
 			request.Header.Set("Accept", "text/html,application/xhtml+xml;q=0.9")
 			request.Header.Set("Referer", "https://untrusted.invalid/private")
 			recorder := httptest.NewRecorder()
@@ -75,7 +75,7 @@ func TestBrowserActionServerErrorsDirectUsersToCheckJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := &Server{renderer: renderer}
-	for _, path := range []string{"/bookings/1/run", "/jobs/1/decision"} {
+	for _, path := range []string{"/bookings/new", "/jobs/1/decision"} {
 		t.Run(path, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, path, nil)
 			request.Header.Set("Accept", "text/html")

@@ -16,7 +16,7 @@ another account or the server's deployment configuration.
 | **OTP sources** | BlueBubbles or Twilio configuration, connection checks, pairing, and the default source for newly queued jobs. |
 | **Settings** | Preparation and sign-in deadlines, availability check window, retry delays, and final confirmation preferences shared across lakes; browser defaults for new sign-ins; account management. |
 | **Lakes → a lake** | Connection status, provider sign-in setup, the account to use for bookings, vehicle keyword, release schedule, default pass preferences, and booking URLs. For Buntzen Lake, the connection uses Yodel. |
-| **Bookings** | A Book action for each ready lake, followed by a visit date and pass choices. Older saved requests can be viewed or deleted here. |
+| **Bookings** | A Book action for each ready lake, followed by a visit date and pass choices. |
 | **Jobs** | Queued and completed booking attempts, progress, approval, cancellation, and retained history. |
 
 Provider sign-ins are managed from their lake page. Buntzen Lake contains its
@@ -72,24 +72,17 @@ defined by the catalog. Custom URLs must still use an operator-approved origin.
 
 New sign-ins copy the account's browser defaults. Each new booking captures the
 current lake and account defaults together with the chosen date and passes.
-Saving or resetting preferences never rewrites existing sign-ins, saved
-requests, or queued jobs. **Reset saved preferences** restores the lake defaults
+Saving or resetting preferences never rewrites existing sign-ins or queued jobs. **Reset saved preferences** restores the lake defaults
 while preserving the chosen booking account and global settings.
 
-Requests from before this flow remain under **Bookings → Saved requests** with
-their original values and scheduling flags. They can be viewed or deleted;
-**Book another day** starts a new visit using current lake defaults. To delete a
-saved request, open it and choose **Delete saved request**. A request with a
-pending job must wait for completion or have that job cancelled from Jobs first.
-Deletion stops future automatic queueing from the request while preserving its
-completed job history and reservation records. It cannot bypass a confirmed or
-unresolved booking for the same account and date.
+The old saved-request UI and automatic queueing have been removed. Upgrades
+disable legacy scheduling flags while retaining job inputs, job history, and
+reservation records. Existing queued jobs still run at their saved time and can
+be cancelled from Jobs. `SCHEDULES_ENABLED` is no longer used. Each new visit
+starts with **Book** and captures current settings.
 
-`SCHEDULES_ENABLED` controls automatic job creation from legacy saved requests.
-Pressing **Book** explicitly creates a job regardless of that switch. Already
-queued jobs keep their saved timing and confirmation mode; stop them from Jobs
-when needed. Advanced CLI sign-in checks, dry runs, and booking commands remain
-available for existing request IDs; see [Common commands](../README.md#common-commands).
+Advanced CLI checks remain available for existing request IDs; see
+[Common commands](../README.md#common-commands).
 
 ## Current boundaries
 
@@ -106,7 +99,7 @@ available for existing request IDs; see [Common commands](../README.md#common-co
   account, vehicle, date, pass order, release rules, and timing; they are cleaned
   up with their final retained job. Reservation records remain independent of
   that cleanup. The engine dispatches the saved lake and provider to the worker,
-  and the scheduler uses the saved release policy.
+  and queued jobs use the captured release policy.
 - `actions/src/lake_pass_actions/lakes/` defines destination-specific pass labels
   and matching rules. Its Buntzen module owns those choices.
 - `actions/src/lake_pass_actions/providers/yodel/` owns Yodel browser behavior:

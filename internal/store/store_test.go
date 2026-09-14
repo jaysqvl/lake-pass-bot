@@ -29,7 +29,7 @@ func TestMigrateCreatesCleanSchemaAndRefusesLegacyDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	version, err := store.SchemaVersion(ctx)
-	if err != nil || version != 13 {
+	if err != nil || version != 14 {
 		t.Fatalf("version=%d err=%v", version, err)
 	}
 
@@ -151,7 +151,11 @@ func TestBookingPreservesExplicitZeroOffsetsAndRejectsRelativeURLs(t *testing.T)
 		LoginProbeURL: "https://example.test/login", AllDayPassURL: "https://example.test/all",
 		CheckAllDay: true,
 	}
-	created, err := store.CreateBookingRequest(context.Background(), testUserID, request)
+	job, err := store.ForUser(testUserID).EnqueueBookingRequest(context.Background(), request, EnqueueJobParams{Command: model.CommandDryRun})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.GetBookingRequest(context.Background(), testUserID, *job.BookingRequestID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +164,7 @@ func TestBookingPreservesExplicitZeroOffsetsAndRejectsRelativeURLs(t *testing.T)
 	}
 	request.Name = "invalid URL"
 	request.AllDayPassURL = "/relative"
-	if _, err := store.CreateBookingRequest(context.Background(), testUserID, request); err == nil {
+	if _, err := store.ForUser(testUserID).EnqueueBookingRequest(context.Background(), request, EnqueueJobParams{Command: model.CommandDryRun}); err == nil {
 		t.Fatal("relative pass URL was accepted")
 	}
 }
@@ -191,7 +195,7 @@ func TestBlueBubblesPairingFingerprintIsAllOrNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	booking, err := store.CreateBookingRequest(ctx, testUserID, model.BookingRequest{
+	booking, err := store.createLegacyBookingFixture(ctx, testUserID, model.BookingRequest{
 		Name: "pairing booking", ProfileID: profile.ID, Enabled: true,
 		TargetDate: "2030-01-15", Timezone: "UTC", ReleaseTime: "07:00",
 		PrepMinutesBefore: 30, AuthDeadlineMinutesBefore: 5, PollDeadlineSeconds: 120,
@@ -379,10 +383,6 @@ func TestQueuedJobGuardsProfileSourceAndBookingConfiguration(t *testing.T) {
 	})
 	if !errors.Is(err, ErrConflict) {
 		t.Fatalf("profile mutation error = %v", err)
-	}
-	booking.Name = "changed booking"
-	if _, err := store.UpdateBookingRequest(ctx, testUserID, booking); !errors.Is(err, ErrConflict) {
-		t.Fatalf("booking mutation error = %v", err)
 	}
 	_, err = store.UpdateOTPSource(ctx, testUserID, source.ID, OTPSourceInput{
 		Name: source.Name, Provider: source.Provider, Identity: source.Identity,
@@ -754,7 +754,7 @@ func fixtureProfileAndBooking(t *testing.T, store *Store, name string) (model.Pr
 	if err != nil {
 		t.Fatal(err)
 	}
-	booking, err := store.CreateBookingRequest(ctx, testUserID, model.BookingRequest{
+	booking, err := store.createLegacyBookingFixture(ctx, testUserID, model.BookingRequest{
 		Name: name + " booking", ProfileID: profile.ID, Enabled: true,
 		TargetDate: "2030-01-15", Timezone: "UTC", ReleaseTime: "07:00",
 		PrepMinutesBefore: 30, AuthDeadlineMinutesBefore: 5, PollDeadlineSeconds: 120,
@@ -788,7 +788,7 @@ func claimedBlueBubblesPairingJob(t *testing.T, database *Store, userID int64, n
 	if err != nil {
 		t.Fatal(err)
 	}
-	booking, err := database.CreateBookingRequest(ctx, userID, model.BookingRequest{
+	booking, err := database.createLegacyBookingFixture(ctx, userID, model.BookingRequest{
 		Name: name + " booking", ProfileID: profile.ID, Enabled: true,
 		TargetDate: "2030-01-15", Timezone: "UTC", ReleaseTime: "07:00",
 		PrepMinutesBefore: 30, AuthDeadlineMinutesBefore: 5, PollDeadlineSeconds: 120,

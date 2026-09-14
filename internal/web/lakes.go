@@ -329,7 +329,7 @@ func lakeSettingsSections(lake destinations.Lake, value model.LakeSettings) []fo
 		{Title: "Vehicle selection", Fields: []formField{
 			{Name: "vehicle_keyword", Label: "Vehicle keyword", Type: "text", Value: value.VehicleKeyword, Wide: true, Help: "A unique name or licence plate that matches a vehicle saved in your booking account."},
 		}},
-		{Title: "Release schedule", Help: "When passes become available for this lake. Existing booking requests keep their saved schedule.", Fields: []formField{
+		{Title: "Release schedule", Help: "When passes become available for this lake. Queued visits keep their saved schedule.", Fields: []formField{
 			{Name: "timezone", Label: "Timezone", Type: "text", Value: value.Timezone, Required: true},
 			{Name: "release_time", Label: "Release time", Type: "time", Value: value.ReleaseTime, Required: true},
 			{Name: "release_days_before", Label: "Days before your visit", Type: "number", Value: strconv.Itoa(value.ReleaseDaysBefore), Required: true, Min: "0", Max: "365", Step: "1", Help: "Use 0 when passes release on the visit date."},

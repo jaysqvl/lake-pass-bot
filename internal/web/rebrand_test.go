@@ -95,7 +95,7 @@ func TestRebrandPreservesLegacySessionsAndLogout(t *testing.T) {
 	}
 }
 
-func TestLakeBookingSelectionAndLegacyRequestsRejectInvalidChanges(t *testing.T) {
+func TestLakeBookingSelectionRejectsUnsupportedLakesAndRetiredRequestRoutes(t *testing.T) {
 	fixture := newWebFixture(t)
 	_, saved := createImmediateWebBooking(t, fixture, fixture.admin.ID, "lake owner", true)
 	cookies := loginCookies(t, fixture)
@@ -105,12 +105,12 @@ func TestLakeBookingSelectionAndLegacyRequestsRejectInvalidChanges(t *testing.T)
 	}
 	path := "/bookings/" + stringID(saved.ID)
 	page = serveForm(fixture, http.MethodGet, path, cookies, nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), saved.Name) || !strings.Contains(page.Body.String(), "Buntzen Lake") || strings.Contains(page.Body.String(), `name="lake_id"`) {
-		t.Fatal("legacy request did not retain its destination as a read-only detail")
+	if page.Code != http.StatusNotFound {
+		t.Fatalf("retired request GET=%d", page.Code)
 	}
 	form := url.Values{"csrf_token": {csrfFrom(cookies)}, "lake_id": {"unsupported"}, "target_date": {"2030-01-15"}, "pass_priority_1": {"all_day"}}
 	response := serveForm(fixture, http.MethodPost, path, cookies, form)
-	if response.Code != http.StatusMethodNotAllowed {
+	if response.Code != http.StatusNotFound {
 		t.Fatalf("removed request update route status=%d", response.Code)
 	}
 	retained, err := fixture.store.ForUser(fixture.admin.ID).GetBookingRequest(context.Background(), saved.ID)

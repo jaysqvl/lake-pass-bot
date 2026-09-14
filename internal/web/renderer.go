@@ -85,7 +85,6 @@ func newRenderer(version, revision string) (*Renderer, error) {
 		"lakes":            {"assets/templates/base.html", "assets/templates/lake_icon.html", "assets/templates/lakes.html"},
 		"bookings":         {"assets/templates/base.html", "assets/templates/lake_icon.html", "assets/templates/resource_card.html", "assets/templates/bookings.html"},
 		"quick_booking":    {"assets/templates/base.html", "assets/templates/form_fields.html", "assets/templates/quick_booking.html"},
-		"saved_booking":    {"assets/templates/base.html", "assets/templates/saved_booking.html"},
 		"list":             {"assets/templates/base.html", "assets/templates/list.html"},
 		"form":             {"assets/templates/base.html", "assets/templates/form_fields.html", "assets/templates/form.html"},
 		"lake":             {"assets/templates/base.html", "assets/templates/form_fields.html", "assets/templates/resource_card.html", "assets/templates/lake.html"},

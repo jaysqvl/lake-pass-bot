@@ -45,10 +45,6 @@ func TestEnqueueBookingRequestKeepsAnOwnedImmutableSnapshot(t *testing.T) {
 	if _, err := database.ForUser(otherID).GetBookingRequest(ctx, snapshot.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("snapshot is visible to another user: %v", err)
 	}
-	visible, err := resources.ListSavedBookingRequests(ctx)
-	if err != nil || len(visible) != 1 || visible[0].ID != saved.ID {
-		t.Fatalf("snapshot appeared among saved requests: %+v err=%v", visible, err)
-	}
 	all, err := resources.ListBookingRequests(ctx)
 	if err != nil || len(all) != 2 {
 		t.Fatalf("job presentation cannot read snapshot: %+v err=%v", all, err)
@@ -56,21 +52,20 @@ func TestEnqueueBookingRequestKeepsAnOwnedImmutableSnapshot(t *testing.T) {
 	if err := resources.RequestJobCancellation(ctx, job.ID); err != nil {
 		t.Fatal(err)
 	}
-	// A forged kind must not make an immutable row editable after its job ends.
+	// A later submission receives separate inputs even if it carries an old ID.
 	changed := snapshot
 	changed.Kind = model.BookingKindSaved
 	changed.TargetDate = "2031-01-16"
 	changed.VehicleKeyword = "Another car"
-	if _, err := resources.UpdateBookingRequest(ctx, changed); !errors.Is(err, ErrConflict) {
-		t.Fatalf("completed snapshot was editable: %v", err)
+	next, err := resources.EnqueueBookingRequest(ctx, changed, EnqueueJobParams{Command: model.CommandDryRun})
+	if err != nil || *next.BookingRequestID == snapshot.ID {
+		t.Fatalf("new visit reused old inputs: %+v %v", next, err)
 	}
 	retained, err := resources.GetBookingRequest(ctx, snapshot.ID)
 	if err != nil || !reflect.DeepEqual(retained, snapshot) {
-		t.Fatalf("rejected edit changed snapshot: %+v err=%v", retained, err)
+		t.Fatalf("later submission changed snapshot: %+v %v", retained, err)
 	}
-	if _, err := resources.CreateBookingRequest(ctx, snapshot); err == nil {
-		t.Fatal("snapshot could be created without a job")
-	}
+
 }
 
 func TestEnqueueBookingRequestRollsBackRejectedAdmission(t *testing.T) {
@@ -184,7 +179,7 @@ func TestSnapshotRetentionFollowsJobsWithoutUsingSavedRequestQuota(t *testing.T)
 	for index := 1; index < 64; index++ {
 		saved := request
 		saved.Name = fmt.Sprintf("Saved request %d", index)
-		if _, err := resources.CreateBookingRequest(ctx, saved); err != nil {
+		if _, err := resources.createLegacyBookingFixture(ctx, saved); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -214,15 +209,11 @@ func TestSnapshotRetentionFollowsJobsWithoutUsingSavedRequestQuota(t *testing.T)
 	if err != nil || len(requests) != 64+MaxTerminalJobHistoryPerUser {
 		t.Fatalf("retention requests=%d err=%v", len(requests), err)
 	}
-	visible, err := resources.ListSavedBookingRequests(ctx)
-	if err != nil || len(visible) != 64 {
-		t.Fatalf("retention changed saved requests: %d err=%v", len(visible), err)
+	var legacyCount int
+	if err := database.db.QueryRowContext(ctx, "SELECT count(*) FROM booking_requests WHERE kind='saved'").Scan(&legacyCount); err != nil || legacyCount != 64 {
+		t.Fatalf("retention changed legacy rows: %d %v", legacyCount, err)
 	}
-	extra := request
-	extra.Name = "One saved request too many"
-	if _, err := resources.CreateBookingRequest(ctx, extra); !errors.Is(err, ErrResourceLimit) {
-		t.Fatalf("saved request limit no longer applies: %v", err)
-	}
+
 }
 
 func TestSnapshotNamesPreserveUTF8AndFitTheNameLimit(t *testing.T) {

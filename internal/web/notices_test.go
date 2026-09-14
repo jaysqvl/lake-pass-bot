@@ -13,17 +13,13 @@ import (
 	"github.com/jaysqvl/lake-pass-bot/internal/store"
 )
 
-func TestBookingFailureExplainsRetainedConfirmationAndLinksOwnedJob(t *testing.T) {
+func TestBookingFailureExplainsRetainedConfirmationWithoutAnotherJob(t *testing.T) {
 	fixture := newWebFixture(t)
 	ctx := context.Background()
 	resources := fixture.store.ForUser(fixture.admin.ID)
 	_, booking := createImmediateWebBooking(t, fixture, fixture.admin.ID, "retained-notice", true)
 	booking.TargetDate = "2030-09-10"
-	booking, err := resources.UpdateBookingRequest(ctx, booking)
-	if err != nil {
-		t.Fatal(err)
-	}
-	job, err := fixture.server.engine.QueueBooking(ctx, fixture.admin.ID, booking.ID, model.CommandBook, "")
+	job, err := fixture.server.engine.QueueLakeBooking(ctx, fixture.admin.ID, booking)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,27 +32,11 @@ func TestBookingFailureExplainsRetainedConfirmationAndLinksOwnedJob(t *testing.T
 	if _, err := fixture.store.SystemTransitionJob(ctx, job.ID, []model.JobStatus{model.JobRunning}, model.JobOutcomeUnknown, store.JobTransition{}); err != nil {
 		t.Fatal(err)
 	}
-	other := booking
-	other.ID, other.Name, other.ConfirmationMode = 0, "Another request for the same date", model.RunModeManual
-	other, err = resources.CreateBookingRequest(ctx, other)
-	if err != nil {
-		t.Fatal(err)
-	}
 	cookies := loginCookies(t, fixture)
-	response := serveForm(fixture, http.MethodPost, fmt.Sprintf("/bookings/%d/run", other.ID), cookies,
-		url.Values{"csrf_token": {csrfFrom(cookies)}, "command": {"book"}})
-	destination, err := url.Parse(response.Header().Get("Location"))
-	if err != nil || response.Code != http.StatusSeeOther || destination.Path != "/bookings" || destination.Query().Get("notice") != "queue-review" || destination.Query().Get("job") != fmt.Sprint(job.ID) {
-		t.Fatalf("retained confirmation response=%d destination=%s", response.Code, response.Header().Get("Location"))
-	}
-	page := serveForm(fixture, http.MethodGet, destination.String(), cookies, nil)
-	for _, want := range []string{`role="alert"`, "Check Yodel before retrying", "View existing job", fmt.Sprintf(`href="/jobs/%d"`, job.ID)} {
-		if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), want) {
-			t.Fatalf("retained booking missing %q: %d %s", want, page.Code, page.Body.String())
-		}
-	}
-	if strings.Contains(page.Body.String(), "No second job was created") {
-		t.Fatal("uncertain completed checkout was described as a pending duplicate")
+	response := serveForm(fixture, http.MethodPost, "/bookings/new", cookies,
+		url.Values{"csrf_token": {csrfFrom(cookies)}, "lake_id": {"buntzen"}, "target_date": {booking.TargetDate}, "pass_priority_1": {"all_day"}})
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "already has a booking or pending job for that date") || !strings.Contains(response.Body.String(), `role="alert"`) {
+		t.Fatalf("retained confirmation response=%d body=%s", response.Code, response.Body.String())
 	}
 	if jobs, err := resources.ListJobs(ctx, 10); err != nil || len(jobs) != 1 || jobs[0].Status != model.JobOutcomeUnknown {
 		t.Fatalf("notification changed retained booking protection: jobs=%+v err=%v", jobs, err)
@@ -66,7 +46,7 @@ func TestBookingFailureExplainsRetainedConfirmationAndLinksOwnedJob(t *testing.T
 func TestFullQueueDoesNotClaimThatBookingIsAlreadyQueued(t *testing.T) {
 	fixture := newWebFixture(t)
 	ctx := context.Background()
-	profile, booking := createImmediateWebBooking(t, fixture, fixture.admin.ID, "capacity-notice", true)
+	profile, _ := createImmediateWebBooking(t, fixture, fixture.admin.ID, "capacity-notice", true)
 	for range store.MaxPendingJobsPerUser {
 		if _, err := fixture.store.ForUser(fixture.admin.ID).EnqueueJob(ctx, store.EnqueueJobParams{
 			ProfileID: profile.ID, Command: model.CommandAuthCheck, DueAt: time.Now().Add(time.Hour),
@@ -75,14 +55,14 @@ func TestFullQueueDoesNotClaimThatBookingIsAlreadyQueued(t *testing.T) {
 		}
 	}
 	cookies := loginCookies(t, fixture)
-	response := serveForm(fixture, http.MethodPost, fmt.Sprintf("/bookings/%d/run", booking.ID), cookies,
-		url.Values{"csrf_token": {csrfFrom(cookies)}, "command": {"book"}, "timing": {"now"}})
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/bookings?notice=queue-full" {
-		t.Fatalf("capacity error=%d location=%s", response.Code, response.Header().Get("Location"))
+	response := serveForm(fixture, http.MethodPost, "/bookings/new", cookies,
+		url.Values{"csrf_token": {csrfFrom(cookies)}, "lake_id": {"buntzen"}, "target_date": {"2030-09-10"}, "pass_priority_1": {"all_day"}})
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "Your job queue is full") || strings.Contains(response.Body.String(), "already has a booking") {
+		t.Fatalf("capacity notification=%d %s", response.Code, response.Body.String())
 	}
-	page := serveForm(fixture, http.MethodGet, response.Header().Get("Location"), cookies, nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "reached its job limit") || strings.Contains(page.Body.String(), "View existing job") {
-		t.Fatalf("capacity notification=%d %s", page.Code, page.Body.String())
+	jobs, err := fixture.store.ForUser(fixture.admin.ID).ListJobs(ctx, 100)
+	if err != nil || len(jobs) != store.MaxPendingJobsPerUser {
+		t.Fatalf("full queue changed after rejected booking: jobs=%+v err=%v", jobs, err)
 	}
 }
 
@@ -94,7 +74,7 @@ func TestNotificationCannotLinkAnotherOwnersJobOrEchoArbitraryText(t *testing.T)
 		t.Fatal(err)
 	}
 	_, booking := createImmediateWebBooking(t, fixture, member.ID, "private-notice", true)
-	job, err := fixture.server.engine.QueueBookingNow(ctx, member.ID, booking.ID)
+	job, err := fixture.server.engine.QueueLakeBooking(ctx, member.ID, booking)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -29,7 +29,7 @@ func TestPendingJobPagesAndStreamExplainStartAndConfirmation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			profile, booking := createImmediateWebBooking(t, fixture, fixture.admin.ID, test.name, true)
 			booking.Timezone = "America/Vancouver"
-			booking, err := resources.UpdateBookingRequest(ctx, booking)
+			booking, err := updateLegacyBooking(ctx, fixture, fixture.admin.ID, booking)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -70,7 +70,7 @@ func TestPendingJobPagesAndStreamExplainStartAndConfirmation(t *testing.T) {
 			}
 			booking.Timezone = "Asia/Tokyo"
 			booking.Name = "Renamed after cancellation " + test.name
-			if _, err := resources.UpdateBookingRequest(ctx, booking); err != nil {
+			if _, err := updateLegacyBooking(ctx, fixture, fixture.admin.ID, booking); err != nil {
 				t.Fatal(err)
 			}
 			terminalJob, err := resources.GetJob(ctx, job.ID)

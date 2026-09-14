@@ -19,6 +19,7 @@ import (
 	"github.com/jaysqvl/lake-pass-bot/internal/otp"
 	"github.com/jaysqvl/lake-pass-bot/internal/otp/bluebubbles"
 	"github.com/jaysqvl/lake-pass-bot/internal/store"
+	"github.com/jaysqvl/lake-pass-bot/internal/testutil/bookingfixture"
 )
 
 func TestPairingPrerequisitesIdentifyTheProfileToCorrect(t *testing.T) {
@@ -36,7 +37,7 @@ func TestPairingPrerequisitesIdentifyTheProfileToCorrect(t *testing.T) {
 			fixture := newEngineTestFixture(t)
 			ctx := context.Background()
 			if !test.profile {
-				if err := fixture.resources.DeleteBookingRequest(ctx, fixture.booking.ID); err != nil {
+				if err := removeUnusedLegacyFixture(ctx, fixture); err != nil {
 					t.Fatal(err)
 				}
 				if err := fixture.resources.DeleteProfile(ctx, fixture.booking.ProfileID); err != nil {
@@ -70,7 +71,7 @@ func TestPairingPrerequisitesIdentifyTheProfileToCorrect(t *testing.T) {
 func TestPairingQueuesAnOwnedProfileWithoutAnyBooking(t *testing.T) {
 	fixture := newEngineTestFixture(t)
 	ctx := context.Background()
-	if err := fixture.resources.DeleteBookingRequest(ctx, fixture.booking.ID); err != nil {
+	if err := removeUnusedLegacyFixture(ctx, fixture); err != nil {
 		t.Fatal(err)
 	}
 	source := createPairingTestSource(t, fixture.resources, "http://127.0.0.1:2234")
@@ -221,7 +222,7 @@ emit("run.complete", status="cancelled" if start["command"] == "book" else "succ
 			fixture := newEngineTestFixture(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			if err := fixture.resources.DeleteBookingRequest(ctx, fixture.booking.ID); err != nil {
+			if err := removeUnusedLegacyFixture(ctx, fixture); err != nil {
 				t.Fatal(err)
 			}
 			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -255,14 +256,14 @@ emit("run.complete", status="cancelled" if start["command"] == "book" else "succ
 				if test.immediate {
 					booking.TargetDate = time.Now().UTC().Format(time.DateOnly)
 				}
-				booking, err = fixture.resources.CreateBookingRequest(ctx, booking)
+				booking, err = bookingfixture.Create(ctx, fixture.databasePath, fixture.resources, booking)
 				if err != nil {
 					t.Fatal(err)
 				}
 				if test.immediate {
-					job, err = fixture.engine.QueueBookingNow(ctx, fixture.user.ID, booking.ID)
+					job, err = fixture.engine.QueueLakeBooking(ctx, fixture.user.ID, booking)
 				} else {
-					job, err = fixture.engine.QueueBooking(ctx, fixture.user.ID, booking.ID, model.CommandDryRun, model.RunModeDryRun)
+					job, err = fixture.engine.SystemQueueBooking(ctx, booking.ID, model.CommandDryRun, model.RunModeDryRun)
 				}
 			} else {
 				job, err = fixture.resources.EnqueueJob(ctx, store.EnqueueJobParams{ProfileID: profile.ID, Command: model.CommandAuthCheck})

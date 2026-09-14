@@ -19,9 +19,9 @@ const (
 	PassMorning   PassType = "morning"
 )
 
-// Saved requests retain legacy schedules. Snapshots are immutable inputs to new
-// jobs; archived requests retain legacy history without claiming that their
-// current fields were the original inputs to every historical job.
+// Saved and archived records retain legacy job references. Snapshots are
+// immutable inputs to new jobs; legacy fields are not assumed to be the
+// original inputs to every historical job.
 type BookingKind string
 
 const (

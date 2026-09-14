@@ -131,8 +131,8 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 	}
 	location := time.UTC
 	var bookingReview []labelValue
-	// Snapshots remain immutable after completion. Legacy saved requests can
-	// change after a job finishes, so only show those while edits are locked.
+	// Snapshots remain immutable after completion. Historical saved requests may
+	// have changed after their jobs finished, so show those only for pending jobs.
 	if job.BookingRequestID != nil && job.Command == model.CommandBook {
 		booking, err := userStore.GetBookingRequest(r.Context(), *job.BookingRequestID)
 		if err != nil {

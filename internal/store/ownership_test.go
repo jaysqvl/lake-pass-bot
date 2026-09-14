@@ -50,7 +50,6 @@ func TestUserResourcesAreIsolatedAndNamesArePerUser(t *testing.T) {
 	assertNotFound(t, func() error { _, err := second.GetProfileCredentials(ctx, firstProfile.ID); return err })
 	assertNotFound(t, func() error { return second.DeleteOTPSource(ctx, firstSource.ID) })
 	assertNotFound(t, func() error { return second.DeleteProfile(ctx, firstProfile.ID) })
-	assertNotFound(t, func() error { return second.DeleteBookingRequest(ctx, firstBooking.ID) })
 
 	if _, err := database.SystemGetOTPSource(ctx, firstSource.ID); err != nil {
 		t.Fatalf("trusted worker could not resolve source: %v", err)
@@ -229,7 +228,7 @@ func createOwnedResources(t *testing.T, database *Store, userID int64, unique st
 	if err != nil {
 		t.Fatal(err)
 	}
-	booking, err := resources.CreateBookingRequest(ctx, model.BookingRequest{
+	booking, err := resources.createLegacyBookingFixture(ctx, model.BookingRequest{
 		UserID: 999_999, // Deliberately ignored in favor of the bound actor.
 		Name:   "shared booking name", ProfileID: profile.ID, Enabled: true,
 		TargetDate: "2031-01-15", Timezone: "UTC", ReleaseTime: "07:00",

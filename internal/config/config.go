@@ -32,7 +32,6 @@ type Config struct {
 	ArtifactsDir        string
 	ListenAddress       string
 	MaxConcurrentJobs   int
-	SchedulesEnabled    bool
 	PythonExecutable    string
 	PythonModule        string
 	BrowserExecutable   string
@@ -64,10 +63,6 @@ func Load() (Config, error) {
 		listen = defaultListenAddress
 	}
 	maxJobs, err := boundedInt("MAX_CONCURRENT_JOBS", defaultMaxJobs, 1, 8)
-	if err != nil {
-		return Config{}, err
-	}
-	schedules, err := boolValue("SCHEDULES_ENABLED", false)
 	if err != nil {
 		return Config{}, err
 	}
@@ -154,7 +149,6 @@ func Load() (Config, error) {
 		ArtifactsDir:        filepath.Join(abs, "artifacts"),
 		ListenAddress:       listen,
 		MaxConcurrentJobs:   maxJobs,
-		SchedulesEnabled:    schedules,
 		PythonExecutable:    python,
 		PythonModule:        module,
 		BrowserExecutable:   browserExecutable,

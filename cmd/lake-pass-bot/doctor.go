@@ -59,7 +59,6 @@ func runDoctor(ctx context.Context, cfg config.Config, database *store.Store) er
 		"python_module":       cfg.PythonModule,
 		"python_ready":        pythonOK,
 		"log_level":           cfg.EffectiveLogLevel(),
-		"schedules_enabled":   cfg.SchedulesEnabled,
 		"max_concurrent_jobs": cfg.MaxConcurrentJobs,
 		"otp_sources":         providerReports,
 	}

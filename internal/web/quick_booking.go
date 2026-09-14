@@ -72,7 +72,6 @@ type bookingLakeCard struct {
 type lakeBookingsData struct {
 	BaseData
 	Lakes []bookingLakeCard
-	Saved []dashboardCard
 }
 
 func (s *Server) lakeBookingsPage(w http.ResponseWriter, r *http.Request) {
@@ -86,35 +85,6 @@ func (s *Server) lakeBookingsPage(w http.ResponseWriter, r *http.Request) {
 		data.Lakes = append(data.Lakes, bookingLakeCard{
 			Lake: lake, Ready: problem == "", Problem: problem,
 		})
-	}
-	resources := s.userStore(r)
-	if data.Flash != nil {
-		switch r.URL.Query().Get("notice") {
-		case "queue-pending", "queue-review":
-			if job, err := resources.GetJob(r.Context(), parseInt64(r.URL.Query().Get("job"))); err == nil {
-				data.Flash.ActionLabel = "View existing job"
-				data.Flash.ActionURL = fmt.Sprintf("/jobs/%d", job.ID)
-			}
-		case "queue-full", "queue-unavailable":
-			data.Flash.ActionLabel, data.Flash.ActionURL = "View jobs", "/jobs"
-		}
-	}
-	saved, err := resources.ListSavedBookingRequests(r.Context())
-	if err != nil {
-		s.internal(w)
-		return
-	}
-	for _, request := range saved {
-		card := listCard{
-			Title: request.Name, URL: fmt.Sprintf("/bookings/%d", request.ID), Subtitle: lakeName(request.LakeID), Status: request.TargetDate,
-			Fields:  []labelValue{{Label: "Pass choices", Value: strings.Join(passNames(request.PassOrder()), " → ")}},
-			Actions: []cardAction{{Label: "View request", URL: fmt.Sprintf("/bookings/%d", request.ID)}},
-		}
-		if request.ScheduleEnabled && request.Enabled {
-			card.Description = "Saved for automatic queueing when server scheduling is enabled."
-		}
-		card.Actions = append(card.Actions, cardAction{Label: "Delete", URL: fmt.Sprintf("/bookings/%d#delete", request.ID), Class: "ghost"})
-		data.Saved = append(data.Saved, dashboardCard{listCard: card, CSRFToken: data.CSRFToken})
 	}
 	s.render(w, http.StatusOK, "bookings", data)
 }
@@ -235,59 +205,6 @@ func (s *Server) lakeBookingCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/jobs/%d?ok=queued", job.ID), http.StatusSeeOther)
-}
-
-type savedBookingData struct {
-	BaseData
-	Request                   model.BookingRequest
-	LakeName, Passes, Problem string
-	PendingJobURL             string
-}
-
-func (s *Server) savedBookingPage(w http.ResponseWriter, r *http.Request) {
-	s.renderSavedBooking(w, r, "")
-}
-
-func (s *Server) renderSavedBooking(w http.ResponseWriter, r *http.Request, problem string) {
-	id, ok := pathID(w, r)
-	if !ok {
-		return
-	}
-	request, err := s.userStore(r).GetBookingRequest(r.Context(), id)
-	if err != nil {
-		s.notFoundOrInternal(w, err)
-		return
-	}
-	if request.Kind != model.BookingKindSaved {
-		http.NotFound(w, r)
-		return
-	}
-	data := savedBookingData{BaseData: base(r, request.Name), Request: request, LakeName: lakeName(request.LakeID), Passes: strings.Join(passNames(request.PassOrder()), " → "), Problem: problem}
-	job, err := s.pendingResourceJob(r, func(job model.Job) bool { return job.BookingRequestID != nil && *job.BookingRequestID == id })
-	if err != nil {
-		s.internal(w)
-		return
-	}
-	if job != nil {
-		data.PendingJobURL = fmt.Sprintf("/jobs/%d", job.ID)
-	}
-	s.render(w, formStatus(problem), "saved_booking", data)
-}
-
-func (s *Server) savedBookingDelete(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r)
-	if !ok {
-		return
-	}
-	if err := s.userStore(r).DeleteBookingRequest(r.Context(), id); err != nil {
-		if errors.Is(err, store.ErrConflict) {
-			s.renderSavedBooking(w, r, "This request has a pending job. Cancel it from Jobs or wait for it to finish, then delete the saved request.")
-		} else {
-			s.notFoundOrInternal(w, err)
-		}
-		return
-	}
-	http.Redirect(w, r, "/bookings?ok=deleted", http.StatusSeeOther)
 }
 
 func bookingDisplayName(request model.BookingRequest) string {

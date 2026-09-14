@@ -142,7 +142,7 @@ func TestProfileSignInAdmissionDeduplicatesConcurrentRequests(t *testing.T) {
 	}
 }
 
-func TestLakeVehicleIsCopiedIntoBookingsAndLegacyUpdatesPreserveSnapshot(t *testing.T) {
+func TestLakeVehicleIsCopiedIntoBookingsAndLaterSettingsPreserveSnapshot(t *testing.T) {
 	ctx := context.Background()
 	database := ownedTestStore(t)
 	owner := database.ForUser(testUserID)
@@ -160,7 +160,11 @@ func TestLakeVehicleIsCopiedIntoBookingsAndLegacyUpdatesPreserveSnapshot(t *test
 	request := settings.ApplyTo(legacy)
 	request.ID = 0
 	request.Name = "Vehicle choice"
-	booking, err := owner.CreateBookingRequest(ctx, request)
+	job, err := owner.EnqueueBookingRequest(ctx, request, EnqueueJobParams{Command: model.CommandDryRun})
+	if err != nil {
+		t.Fatal(err)
+	}
+	booking, err := owner.GetBookingRequest(ctx, *job.BookingRequestID)
 	if err != nil || booking.VehicleKeyword != "Lake vehicle" {
 		t.Fatalf("lake vehicle snapshot: %+v %v", booking, err)
 	}
@@ -168,15 +172,10 @@ func TestLakeVehicleIsCopiedIntoBookingsAndLegacyUpdatesPreserveSnapshot(t *test
 	if _, err := owner.SaveLakeSettings(ctx, settings); err != nil {
 		t.Fatal(err)
 	}
-	booking.VehicleKeyword = ""
-	updated, err := owner.UpdateBookingRequest(ctx, booking)
-	if err != nil || updated.VehicleKeyword != "Lake vehicle" {
-		t.Fatalf("legacy edit rewrote snapshot: %+v %v", updated, err)
-	}
 	if err := owner.ResetLakeSettings(ctx, lake.ID); err != nil {
 		t.Fatal(err)
 	}
-	got, err := owner.GetBookingRequest(ctx, updated.ID)
+	got, err := owner.GetBookingRequest(ctx, booking.ID)
 	if err != nil || got.VehicleKeyword != "Lake vehicle" {
 		t.Fatalf("reset changed snapshot: %+v %v", got, err)
 	}

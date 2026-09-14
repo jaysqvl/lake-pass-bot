@@ -100,7 +100,6 @@ start_container() {
     --env LAKE_PASS_DEBUG=true \
     --env LAKE_PASS_SETUP_TOKEN="$setup_token" \
     --env MAX_CONCURRENT_JOBS=2 \
-    --env SCHEDULES_ENABLED=false \
     "${key_options[@]}" \
     "$image" >/dev/null
 
@@ -137,7 +136,7 @@ validate_doctor() {
   report="$(docker exec "$container" /usr/local/bin/lake-pass-bot doctor)"
   printf '%s\n' "$report" | jq -e '
     .ok == true and
-    .schema_version == 13 and
+    .schema_version == 14 and
     .action_protocol == 2 and
     .appdata_dir == "/appdata" and
     .database_path == "/appdata/lake-pass-bot.db" and
@@ -147,7 +146,6 @@ validate_doctor() {
     .python_module == "lake_pass_actions" and
     .python_ready == true and
     .log_level == "debug" and
-    .schedules_enabled == false and
     .otp_sources == []
   ' >/dev/null || fail "doctor returned an unexpected runtime report"
 }

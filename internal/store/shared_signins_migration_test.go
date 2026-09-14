@@ -117,6 +117,7 @@ func TestSharedSignInMigrationKeepsIdentitiesVehiclesJobsAndIDHighWater(t *testi
 			t.Fatalf("identity credentials changed: %v", err)
 		}
 	}
+	booking.ScheduleEnabled = false // Retired by migration 14; execution inputs remain unchanged.
 	gotBooking, err := database.ForUser(admin.ID).GetBookingRequest(ctx, booking.ID)
 	if err != nil || !reflect.DeepEqual(gotBooking, booking) {
 		t.Fatalf("booking vehicle/timing snapshot changed: %+v %v", gotBooking, err)

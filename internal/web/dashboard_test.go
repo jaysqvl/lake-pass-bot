@@ -41,7 +41,7 @@ func TestHomeShowsLakeStatusAndLakeOwnsSignInManagement(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("home=%d %s", response.Code, body)
 	}
-	for _, text := range []string{`id="home-lakes"`, "Your lakes", "Buntzen Lake", `href="/lakes/buntzen#connection"`, `href="/lakes"`, "Already queued jobs remain scheduled"} {
+	for _, text := range []string{`id="home-lakes"`, "Your lakes", "Buntzen Lake", `href="/lakes/buntzen#connection"`, `href="/lakes"`} {
 		if !strings.Contains(body, text) {
 			t.Errorf("Home missing %q", text)
 		}
@@ -89,7 +89,7 @@ func TestHomeRedirectsUnconfiguredAccountToLakes(t *testing.T) {
 	}
 }
 
-func TestUpcomingVisitsUseVisitDateAndLakeTimezone(t *testing.T) {
+func TestUpcomingVisitsRequireBookingJobsAndUseLakeTimezone(t *testing.T) {
 	now := time.Date(2026, 9, 13, 1, 0, 0, 0, time.UTC)
 	bookings := []model.BookingRequest{
 		{ID: 1, Name: "Alphabetically first, later visit", TargetDate: "2026-09-20", Timezone: "America/Vancouver", Enabled: true},
@@ -99,13 +99,29 @@ func TestUpcomingVisitsUseVisitDateAndLakeTimezone(t *testing.T) {
 		{ID: 5, TargetDate: "2026-09-13", Timezone: "America/Vancouver", Enabled: false},
 		{ID: 6, TargetDate: "2026-09-14", Timezone: "America/Vancouver", Enabled: true},
 		{ID: 7, TargetDate: "2026-09-15", Timezone: "America/Vancouver", Enabled: true},
+		{ID: 8, TargetDate: "2026-09-15", Timezone: "America/Vancouver", Enabled: true},
+		{ID: 9, TargetDate: "2026-09-15", Timezone: "America/Vancouver", Enabled: true},
+		{ID: 10, TargetDate: "2026-09-15", Timezone: "America/Vancouver", Enabled: true},
 	}
-	var ids []int64
-	for _, booking := range upcomingBookings(bookings, now) {
-		ids = append(ids, booking.ID)
+	var jobs []model.Job
+	for i := range bookings {
+		if bookings[i].ID == 7 { // A saved request without a job is not a visit.
+			continue
+		}
+		jobs = append(jobs, model.Job{ID: bookings[i].ID, BookingRequestID: &bookings[i].ID, Command: model.CommandBook, Status: model.JobQueued})
 	}
-	if !slices.Equal(ids, []int64{3, 6, 7}) {
-		t.Fatalf("upcoming IDs = %v, want local-today then next two enabled visits", ids)
+	jobs[0].Status = model.JobSucceeded
+	jobs[5].Status = model.JobCancelled
+	jobs[6].UserID = 999
+	jobs[7].ProfileID = 999
+	jobs[8].Command = model.CommandAuthCheck
+	jobs = append(jobs, jobs[0]) // A second historical attempt does not duplicate the visit.
+	var urls []string
+	for _, visit := range upcomingVisits(bookings, jobs, now) {
+		urls = append(urls, visit.URL)
+	}
+	if !slices.Equal(urls, []string{"/jobs/3", "/jobs/5", "/jobs/1"}) {
+		t.Fatalf("upcoming URLs = %v; want local-today then scheduled/succeeded visits", urls)
 	}
 	if bookings[0].ID != 1 {
 		t.Fatal("dashboard ordering changed the original request list")

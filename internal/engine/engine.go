@@ -56,7 +56,6 @@ func (e *Engine) Start(parent context.Context) {
 	e.mu.Unlock()
 	slog.Info("job engine starting",
 		"workers", e.config.MaxConcurrentJobs,
-		"schedules_enabled", e.config.SchedulesEnabled,
 	)
 	for worker := 0; worker < e.config.MaxConcurrentJobs; worker++ {
 		e.wg.Add(1)
@@ -64,10 +63,6 @@ func (e *Engine) Start(parent context.Context) {
 	}
 	e.wg.Add(1)
 	go e.maintenanceLoop()
-	if e.config.SchedulesEnabled {
-		e.wg.Add(1)
-		go e.scheduleLoop()
-	}
 }
 
 func (e *Engine) Stop() {
