@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.7.0...lake-pass-bot-v0.7.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* retire obsolete saved-request UI and automatic queueing ([27d679e](https://github.com/jaysqvl/lake-pass-bot/commit/27d679e5b9d9e537770ffbef4e1e1cb36873be9c))
+
 ## [0.7.0](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.6.2...lake-pass-bot-v0.7.0) (2026-09-14)
 
 
