@@ -4,20 +4,20 @@ Lake Pass Bot is a self-hosted app for planning and booking lake passes. Set up 
 
 [Quick start](#quick-start-with-docker-compose) · [How booking works](docs/lakes.md) · [Explore the job engine](internal/engine)
 
-![Lake Pass Bot job history showing sample bookings waiting to start, awaiting approval, and completed](docs/screenshots/jobs.jpg)
+![Lake Pass Bot Home showing upcoming visits and lake connection status](docs/screenshots/workspace.jpg)
 
-*Actual app UI with synthetic demo data. The displayed job states were seeded in an isolated local database; no live accounts, OTPs, or reservations were used.*
+*Actual app UI with synthetic demo data from an isolated local database. No live accounts, OTPs, or reservations were used.*
 
 <details>
-<summary>See the booking form and workspace</summary>
+<summary>See the booking form and job history</summary>
 
 Choose a visit date and ranked pass preferences. The app explains when the job will start and whether it needs final approval.
 
 ![Lake Pass Bot booking form with a demo account, visit date, and ranked pass choices](docs/screenshots/booking.jpg)
 
-The workspace brings upcoming visits, connection status, and recent jobs together.
+Jobs tracks booking attempts through their waiting, approval, and completion states.
 
-![Lake Pass Bot workspace with synthetic upcoming visits and job history](docs/screenshots/workspace.jpg)
+![Lake Pass Bot job history showing sample bookings waiting to start, awaiting approval, and completed](docs/screenshots/jobs.jpg)
 
 </details>
 
