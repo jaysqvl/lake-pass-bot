@@ -2,6 +2,32 @@
 
 Lake Pass Bot is a self-hosted app for planning and booking lake passes. Set up a supported lake once, choose a date and passes, then follow the booking in Jobs. A Go service provides the web UI, scheduling, job state, and encrypted storage; separate supervised Python/Playwright processes perform the browser actions.
 
+[Quick start](#quick-start-with-docker-compose) · [How booking works](docs/lakes.md) · [Explore the job engine](internal/engine)
+
+![Lake Pass Bot job history showing sample bookings waiting to start, awaiting approval, and completed](docs/screenshots/jobs.jpg)
+
+*Actual app UI with synthetic demo data. The displayed job states were seeded in an isolated local database; no live accounts, OTPs, or reservations were used.*
+
+<details>
+<summary>See the booking form and workspace</summary>
+
+Choose a visit date and ranked pass preferences. The app explains when the job will start and whether it needs final approval.
+
+![Lake Pass Bot booking form with a demo account, visit date, and ranked pass choices](docs/screenshots/booking.jpg)
+
+The workspace brings upcoming visits, connection status, and recent jobs together.
+
+![Lake Pass Bot workspace with synthetic upcoming visits and job history](docs/screenshots/workspace.jpg)
+
+</details>
+
+## Engineering highlights
+
+- **Durable job execution:** immutable booking snapshots, restart recovery, and duplicate-booking safeguards keep each attempt traceable.
+- **Supervised browser automation:** Go coordinates separate Python/Playwright workers, including OTP sign-in and manual final approval.
+- **Account isolation:** per-user access boundaries and encrypted credential storage support a shared, self-hosted deployment.
+- **Conservative recovery:** uncertain outcomes after final confirmation require review instead of an automatic retry that could book twice.
+
 > [!WARNING]
 > The default private HTTP mode sends traffic, including temporary OTPs, without encryption. Before exposing the app through an HTTPS tunnel, complete setup privately and configure [public HTTPS mode](docs/public-exposure.md). The app uses its own accounts; Cloudflare Access is optional. See [Security](SECURITY.md) for account boundaries and remaining runtime trust.
 
