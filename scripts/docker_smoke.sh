@@ -163,6 +163,23 @@ configured_user="$(docker image inspect --format '{{.Config.User}}' "$image")"
 [[ -n "$configured_user" && "$configured_user" != "root" && "$configured_user" != "0" ]] || fail "image does not configure a non-root runtime user"
 [[ "$(docker run --rm --entrypoint id "$image" -u)" == "1001" ]] || fail "image runtime user must resolve to UID 1001"
 
+# OpenSSL keeps its upstream version for distro backports: check package
+# revisions, not `openssl version`, and verify the actual runtime image.
+docker run --rm --network none --read-only --entrypoint sh "$image" -eu -c '
+  for package in libssl3t64 openssl; do
+    version="$(dpkg-query -W -f="\${Version}" "$package")"
+    dpkg --compare-versions "$version" ge 3.0.13-0ubuntu3.16
+    printf "%s %s\n" "$package" "$version"
+  done
+' || fail "runtime OpenSSL packages lack the required Noble security fixes"
+docker run --rm --network none --read-only --entrypoint python "$image" -c '
+import ssl
+
+context = ssl.create_default_context()
+assert context.check_hostname and context.verify_mode == ssl.CERT_REQUIRED
+assert context.cert_store_stats()["x509_ca"] > 0
+' || fail "patched OpenSSL lost Python certificate-verification defaults"
+
 version_report="$(docker run --rm --read-only --network none \
   --env APPDATA_DIR=/uninitialized-appdata \
   --env MAX_CONCURRENT_JOBS=invalid-runtime-setting \

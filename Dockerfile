@@ -23,7 +23,16 @@ ENV APPDATA_DIR=/appdata \
 
 WORKDIR /app
 COPY actions/requirements.lock /tmp/lake-pass-actions-requirements.txt
-RUN LC_ALL=C apt-get --simulate purge gstreamer1.0-plugins-bad libgstreamer-plugins-bad1.0-0 > /tmp/lake-pass-purge-plan \
+# Keep the pinned browser image; apply Noble's ABI-compatible OpenSSL fixes.
+# Refuse an unexpected resolver change rather than upgrading unrelated packages.
+RUN apt-get update \
+    && LC_ALL=C apt-get --simulate --no-install-recommends --only-upgrade install libssl3t64 openssl > /tmp/lake-pass-openssl-plan \
+    && cat /tmp/lake-pass-openssl-plan \
+    && awk '/^(Remv|Purg) / { exit 1 } /^Inst / { if ($2 != "libssl3t64" && $2 != "openssl") exit 1 }' /tmp/lake-pass-openssl-plan \
+    && apt-get --yes --no-install-recommends --only-upgrade install libssl3t64 openssl \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libssl3t64)" ge 3.0.13-0ubuntu3.16 \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' openssl)" ge 3.0.13-0ubuntu3.16 \
+    && LC_ALL=C apt-get --simulate purge gstreamer1.0-plugins-bad libgstreamer-plugins-bad1.0-0 > /tmp/lake-pass-purge-plan \
     && cat /tmp/lake-pass-purge-plan \
     && awk '/^Inst / { exit 1 } /^(Remv|Purg) / { if ($2 != "gstreamer1.0-plugins-bad" && $2 != "libgstreamer-plugins-bad1.0-0") exit 1 }' /tmp/lake-pass-purge-plan \
     && apt-get --yes --no-auto-remove purge gstreamer1.0-plugins-bad libgstreamer-plugins-bad1.0-0 \
@@ -31,7 +40,7 @@ RUN LC_ALL=C apt-get --simulate purge gstreamer1.0-plugins-bad libgstreamer-plug
     && python -m pip check \
     && python -m pip uninstall --yes virtualenv msgpack setuptools \
     && python -m pip uninstall --yes pip \
-    && rm /tmp/lake-pass-actions-requirements.txt /tmp/lake-pass-purge-plan \
+    && rm /tmp/lake-pass-actions-requirements.txt /tmp/lake-pass-purge-plan /tmp/lake-pass-openssl-plan \
     && rm -rf /root/.cache /home/pwuser/.cache /var/lib/apt/lists/* \
     && mkdir -p /appdata \
     && chown -R pwuser:pwuser /app /appdata
