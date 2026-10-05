@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.3](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.7.2...lake-pass-bot-v0.7.3) (2026-10-05)
+
+
+### Bug Fixes
+
+* apply supported OpenSSL runtime security updates ([#105](https://github.com/jaysqvl/lake-pass-bot/issues/105)) ([c51d653](https://github.com/jaysqvl/lake-pass-bot/commit/c51d6535954b051a75a1510e2bb52568771046c9))
+* **deps:** coordinate Playwright, Go, and CI dependency updates ([#102](https://github.com/jaysqvl/lake-pass-bot/issues/102)) ([0da89cb](https://github.com/jaysqvl/lake-pass-bot/commit/0da89cbced4662d2c9d5486242c2b9ac358dde0e))
+
 ## [0.7.2](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.7.1...lake-pass-bot-v0.7.2) (2026-09-14)
 
 ### Maintenance
