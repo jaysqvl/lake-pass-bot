@@ -65,3 +65,8 @@ Run the Go, Python, release, and provider browser checks described in
 smoke checks the JSON API, hardened cookies, persisted network settings, server
 build identity, and embedded asset delivery. Synthetic tests do not prove that
 a live Yodel booking succeeded.
+
+CI uses the pinned `actions/setup-node` commit in `.github/workflows/ci.yml` to
+provide Node.js 24. Repositories with a selected-action allowlist must permit
+that exact commit. Keep the full-SHA pinning requirement and update the allowlist
+entry when upgrading the action.
