@@ -84,7 +84,7 @@ func openJobStream(t *testing.T, fixture webFixture, jobID int64, cookies []*htt
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		fmt.Sprintf("%s/jobs/%d/events?after=%d", server.URL, jobID, afterID), nil)
+		fmt.Sprintf("%s/api/jobs/%d/events?after=%d", server.URL, jobID, afterID), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestJobStreamResumesFromRenderedAndReconnectedCursors(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	fixture.handler.ServeHTTP(recorder, authenticatedRequest(http.MethodGet,
 		fmt.Sprintf("http://example.test/jobs/%d", job.ID), cookies, nil))
-	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), fmt.Sprintf(`data-last-event-id="%d"`, rendered.ID)) {
+	if recorder.Code != http.StatusOK || apiData[jobData](t, recorder.Body.String(), "job").LastEventID != rendered.ID {
 		t.Fatalf("rendered page missing event cursor: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 	between := appendLiveJobEvent(t, fixture, job.ID, "after_render")

@@ -29,7 +29,7 @@ func TestJobStreamAdmissionRejectsNinthConnection(t *testing.T) {
 		}
 	}()
 	for i := 0; i < 9; i++ {
-		request, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/jobs/%d/events", server.URL, job.ID), nil)
+		request, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/jobs/%d/events", server.URL, job.ID), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -58,7 +58,7 @@ func TestJobStreamAdmissionRejectsNinthConnection(t *testing.T) {
 	}
 	responses[0].Body.Close()
 	waitStreamTotal(t, &f.server.streams, 7)
-	r, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/jobs/%d/events", server.URL, job.ID), nil)
+	r, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/jobs/%d/events", server.URL, job.ID), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestFullStreamBudgetDoesNotExposeAnotherOwnersJob(t *testing.T) {
 		}
 		defer release()
 	}
-	r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("http://example.test/jobs/%d/events", job.ID), nil)
+	r := apiRequest(http.MethodGet, fmt.Sprintf("http://example.test/jobs/%d/events", job.ID), nil)
 	r.AddCookie(&http.Cookie{Name: sessionCookie, Value: credentials.Token})
 	r.AddCookie(&http.Cookie{Name: csrfCookie, Value: credentials.CSRFToken})
 	w := httptest.NewRecorder()
@@ -162,7 +162,7 @@ func TestStreamOutlivesOrdinaryResponseWriteTimeout(t *testing.T) {
 	defer server.Close()
 	client := server.Client()
 	client.Timeout = 40 * time.Second
-	r, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/jobs/%d/events", server.URL, job.ID), nil)
+	r, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/jobs/%d/events", server.URL, job.ID), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

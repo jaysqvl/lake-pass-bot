@@ -81,8 +81,8 @@ func TestStalledSSEWritesAndFinalChunkHaveDeadlines(t *testing.T) {
 			}}
 			defer server.Close()
 			go func() { _ = server.Serve(listener) }()
-			request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("http://example.test/jobs/%d/events", job.ID), nil)
-			request.Header.Set("Accept", "text/html") // Exercise both response wrappers.
+			request := apiRequest(http.MethodGet, fmt.Sprintf("http://example.test/jobs/%d/events", job.ID), nil)
+			request.Header.Set("Accept", "application/json") // Exercise both response wrappers.
 			for _, c := range cookies {
 				request.AddCookie(c)
 			}

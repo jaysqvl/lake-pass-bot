@@ -101,7 +101,7 @@ func TestPublicHealthExceptionDoesNotExposeUI(t *testing.T) {
 		{"http://127.0.0.1:8080/healthz", "198.51.100.2:51000", http.StatusBadRequest},
 		{"http://container.internal/login", "127.0.0.1:51000", http.StatusBadRequest},
 	} {
-		r := httptest.NewRequest(http.MethodGet, tc.target, nil)
+		r := apiRequest(http.MethodGet, tc.target, nil)
 		r.RemoteAddr = tc.peer
 		w := httptest.NewRecorder()
 		f.handler.ServeHTTP(w, r)
@@ -121,7 +121,7 @@ func TestPublicHealthWithoutHostAllowlistRejectsUnknownLoopbackAuthority(t *test
 		{"localhost:8080", http.StatusOK},
 		{"unlisted.example", http.StatusBadRequest},
 	} {
-		r := httptest.NewRequest(http.MethodGet, "http://"+tc.host+"/healthz", nil)
+		r := apiRequest(http.MethodGet, "http://"+tc.host+"/healthz", nil)
 		r.RemoteAddr = "127.0.0.1:51000"
 		w := httptest.NewRecorder()
 		f.handler.ServeHTTP(w, r)
@@ -205,7 +205,7 @@ func TestPublicProxyVisitorLoginLimitsAreIndependent(t *testing.T) {
 		r.AddCookie(csrf)
 		w := httptest.NewRecorder()
 		f.handler.ServeHTTP(w, r)
-		if w.Code != http.StatusSeeOther || w.Header().Get("Location") != tc.want {
+		if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/api"+tc.want {
 			t.Errorf("visitor %s: %d %s", tc.visitor, w.Code, w.Header().Get("Location"))
 		}
 	}
@@ -224,13 +224,13 @@ func TestPublicModeRejectsUnprefixedDomainCookieSession(t *testing.T) {
 	r.AddCookie(&http.Cookie{Name: csrfCookie, Value: credentials.CSRFToken})
 	w := httptest.NewRecorder()
 	f.handler.ServeHTTP(w, r)
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/login" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/api/login" {
 		t.Fatalf("public mode accepted unprefixed domain-cookie session: %d", w.Code)
 	}
 }
 
 func publicRequest(method, target string) *http.Request {
-	r := httptest.NewRequest(method, target, nil)
+	r := apiRequest(method, target, nil)
 	r.RemoteAddr = "127.0.0.1:50000"
 	r.Header.Set("X-Forwarded-Proto", "https")
 	r.Header.Set("CF-Connecting-IP", "203.0.113.7")

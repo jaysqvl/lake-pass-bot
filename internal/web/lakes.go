@@ -95,7 +95,7 @@ func (s *Server) lakesPage(w http.ResponseWriter, r *http.Request) {
 			{"Vehicle keyword", vehicleKeywordLabel(settings.VehicleKeyword)},
 		}})
 	}
-	s.render(w, http.StatusOK, "lakes", data)
+	s.respond(w, http.StatusOK, "lakes", data)
 }
 
 func providerLabel(id string) string {
@@ -199,7 +199,7 @@ func (s *Server) renderLakePage(w http.ResponseWriter, r *http.Request, submitte
 			}
 		}
 	}
-	s.render(w, formStatus(formError), "lake", data)
+	s.respond(w, formStatus(formError), "lake", data)
 }
 
 func (s *Server) lakeUpdate(w http.ResponseWriter, r *http.Request) {
@@ -225,7 +225,7 @@ func (s *Server) lakeUpdate(w http.ResponseWriter, r *http.Request) {
 		s.renderLakePage(w, r, &settings, safeFormError(err))
 		return
 	}
-	http.Redirect(w, r, "/lakes/"+url.PathEscape(id)+"?ok=updated#defaults", http.StatusSeeOther)
+	apiRedirect(w, r, "/lakes/"+url.PathEscape(id)+"?ok=updated#defaults", http.StatusSeeOther)
 }
 
 func (s *Server) lakeConnectionUpdate(w http.ResponseWriter, r *http.Request) {
@@ -258,7 +258,7 @@ func (s *Server) lakeConnectionUpdate(w http.ResponseWriter, r *http.Request) {
 		s.renderLakePage(w, r, nil, safeFormError(err))
 		return
 	}
-	http.Redirect(w, r, "/lakes/"+url.PathEscape(lake.ID)+"?ok=updated#connection", http.StatusSeeOther)
+	apiRedirect(w, r, "/lakes/"+url.PathEscape(lake.ID)+"?ok=updated#connection", http.StatusSeeOther)
 }
 
 func (s *Server) lakeReset(w http.ResponseWriter, r *http.Request) {
@@ -283,7 +283,7 @@ func (s *Server) lakeReset(w http.ResponseWriter, r *http.Request) {
 		s.internal(w)
 		return
 	}
-	http.Redirect(w, r, "/lakes/"+url.PathEscape(id)+"?notice=lake-defaults-reset#defaults", http.StatusSeeOther)
+	apiRedirect(w, r, "/lakes/"+url.PathEscape(id)+"?notice=lake-defaults-reset#defaults", http.StatusSeeOther)
 }
 
 func lakeSettingsInput(r *http.Request, id string) (model.LakeSettings, error) {

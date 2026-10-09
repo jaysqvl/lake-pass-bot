@@ -31,12 +31,15 @@ func TestApprovalPageShowsRequestedDateVehicleAndSelectedPass(t *testing.T) {
 	page := serveForm(fixture, http.MethodGet, fmt.Sprintf("/jobs/%d", job.ID), cookies, nil)
 	for _, want := range []string{
 		"Waiting for approval: all-day pass.", booking.TargetDate + " · UTC", "Vehicle keyword", booking.VehicleKeyword,
-		"Pass preference order", "Book now · manual approval", "Expires", `id="approval-panel" class="approval" >`,
-		`id="cancel-job" class="danger" data-decision="cancel-job" hidden`,
+		"Pass preference order", "Book now · manual approval",
 	} {
 		if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), want) {
 			t.Fatalf("approval page missing %q: status=%d body=%q", want, page.Code, page.Body.String())
 		}
+	}
+	data := apiData[jobData](t, page.Body.String(), "job")
+	if !data.Job.AwaitingApproval || !data.Job.CanCancel || data.Job.ExpiresLabel == "" {
+		t.Fatal("approval state was not available to the client")
 	}
 	if strings.Contains(page.Body.String(), profile.DefaultVehicle) {
 		t.Fatal("approval must show the requested vehicle, not the legacy sign-in vehicle")

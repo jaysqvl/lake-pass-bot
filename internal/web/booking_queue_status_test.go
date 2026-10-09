@@ -44,7 +44,7 @@ func TestJobPagesKeepSchedulingAndCancellationWithoutSavedRequestUI(t *testing.T
 	}
 	page = serveForm(fixture, http.MethodGet, "/", cookies, nil)
 	// Recent activity retains the cancelled job, but it is no longer an upcoming visit.
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "0 upcoming visits") {
+	if page.Code != http.StatusOK || apiData[dashboardData](t, page.Body.String(), "dashboard").BookingCount != 0 {
 		t.Fatalf("cancelled job remained an upcoming visit: %d %s", page.Code, page.Body.String())
 	}
 }

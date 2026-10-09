@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html"
 	"net/http"
 	"net/url"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -59,9 +57,18 @@ func accountSettingsPageValues(settings model.AccountSettings) url.Values {
 
 func assertSettingsSelectChoice(t *testing.T, body, name, value string) {
 	t.Helper()
-	markup := regexp.MustCompile(`(?s)<select name="` + regexp.QuoteMeta(name) + `"[^>]*>(.*?)</select>`).FindStringSubmatch(body)
-	if len(markup) != 2 || !strings.Contains(markup[1], `value="`+value+`" selected`) {
-		t.Fatalf("settings selection %s lost value %q", name, value)
+	field := apiField(t, body, name)
+	selected := 0
+	for _, option := range field.Options {
+		if option.Selected {
+			selected++
+			if option.Value != value {
+				t.Fatalf("settings selection %s = %q; want %q", name, option.Value, value)
+			}
+		}
+	}
+	if field.Type != "select" || selected != 1 {
+		t.Fatalf("settings selection %s has %d selected options", name, selected)
 	}
 }
 
@@ -102,11 +109,11 @@ func TestLakeVehicleFallbackUsesOnlyUnambiguousOwnedLegacyChoices(t *testing.T) 
 			}
 			cookies := loginCookies(t, f)
 			page := serveForm(f, http.MethodGet, "/lakes/buntzen", cookies, nil)
-			if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `name="vehicle_keyword" value="`+test.want+`"`) {
+			if page.Code != http.StatusOK || apiField(t, page.Body.String(), "vehicle_keyword").Value != test.want {
 				t.Fatalf("lake settings did not use the safe legacy vehicle fallback %q: %d %s", test.want, page.Code, page.Body.String())
 			}
 			page = serveForm(f, http.MethodGet, "/bookings/new?lake_id=buntzen", cookies, nil)
-			if page.Code != http.StatusOK || strings.Contains(page.Body.String(), `name="vehicle_keyword"`) || !strings.Contains(page.Body.String(), `href="/lakes/buntzen"`) {
+			if page.Code != http.StatusOK || apiFields(t, page.Body.String())["vehicle_keyword"].Name != "" || apiData[quickBookingData](t, page.Body.String(), "quick_booking").Lake.ID != "buntzen" {
 				t.Fatalf("booking form did not keep vehicle setup on Lakes: %d %s", page.Code, page.Body.String())
 			}
 			if _, err := resources.GetLakeSettings(ctx, "buntzen"); !errors.Is(err, store.ErrNotFound) {
@@ -123,7 +130,7 @@ func TestLakeVehicleFallbackUsesOnlyUnambiguousOwnedLegacyChoices(t *testing.T) 
 					t.Fatal(err)
 				}
 				page := serveForm(f, http.MethodGet, "/lakes/buntzen", cookies, nil)
-				if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `name="vehicle_keyword" value="`+vehicle+`"`) {
+				if page.Code != http.StatusOK || apiField(t, page.Body.String(), "vehicle_keyword").Value != vehicle {
 					t.Fatalf("saved vehicle choice %q was replaced by legacy defaults: %d %s", vehicle, page.Code, page.Body.String())
 				}
 			}
@@ -163,7 +170,7 @@ func TestSettingsAndLakePagesSavePersonalDefaultsAndResetOnlyTheirOwner(t *testi
 		values.Set("csrf_token", csrfFrom(owner.cookies))
 		values.Set("user_id", strconv.FormatInt(f.admin.ID+member.ID-owner.user.ID, 10))
 		response := serveForm(f, http.MethodPost, "/lakes/buntzen", owner.cookies, values)
-		if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/lakes/buntzen?ok=updated#defaults" {
+		if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/api/lakes/buntzen?ok=updated#defaults" {
 			t.Fatalf("save personal lake defaults = %d %s", response.Code, response.Body.String())
 		}
 		account := model.DefaultAccountSettings()
@@ -174,7 +181,7 @@ func TestSettingsAndLakePagesSavePersonalDefaultsAndResetOnlyTheirOwner(t *testi
 		accountValues.Set("csrf_token", csrfFrom(owner.cookies))
 		accountValues.Set("user_id", values.Get("user_id"))
 		response = serveForm(f, http.MethodPost, "/settings", owner.cookies, accountValues)
-		if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/settings?ok=updated" {
+		if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/api/settings?ok=updated" {
 			t.Fatalf("save personal settings = %d %s", response.Code, response.Body.String())
 		}
 	}
@@ -193,37 +200,38 @@ func TestSettingsAndLakePagesSavePersonalDefaultsAndResetOnlyTheirOwner(t *testi
 		}
 		page := serveForm(f, http.MethodGet, "/lakes/buntzen", owner.cookies, nil)
 		body := page.Body.String()
-		if page.Code != http.StatusOK || !strings.Contains(body, owner.profile.Name) || strings.Contains(body, owner.otherProfileName) || !strings.Contains(body, `name="timezone" value="`+owner.timezone+`"`) || !strings.Contains(body, `name="vehicle_keyword" value="`+owner.user.Username+` vehicle"`) || !strings.Contains(body, "Personal defaults") {
+		if page.Code != http.StatusOK || !strings.Contains(body, owner.profile.Name) || strings.Contains(body, owner.otherProfileName) || apiField(t, body, "timezone").Value != owner.timezone || apiField(t, body, "vehicle_keyword").Value != owner.user.Username+" vehicle" || !apiData[lakePageData](t, body, "lake").Saved {
 			t.Fatalf("lake page did not keep connection and preferences personal: %d %s", page.Code, body)
 		}
-		if !strings.Contains(body, `id="connection"`) || !strings.Contains(body, fmt.Sprintf(`action="/profiles/%d/sign-in"`, owner.profile.ID)) {
+		if !hasPostAction(t, body, fmt.Sprintf("/profiles/%d/sign-in", owner.profile.ID)) {
 			t.Fatal("lake is missing its account connection controls")
 		}
 		for _, name := range []string{"prep_minutes_before", "auth_deadline_minutes_before", "poll_deadline_seconds", "poll_min_seconds", "poll_max_seconds"} {
-			if strings.Contains(body, `name="`+name+`"`) {
+			if apiFields(t, body)[name].Name != "" {
 				t.Fatalf("lake settings still contain global %s", name)
 			}
 		}
 		page = serveForm(f, http.MethodGet, "/lakes", owner.cookies, nil)
-		if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), owner.timezone) || !strings.Contains(page.Body.String(), `href="/lakes/buntzen"`) {
+		if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), owner.timezone) || apiData[lakesPageData](t, page.Body.String(), "lakes").Connections[0].URL != "/lakes/buntzen" {
 			t.Fatalf("lake index does not summarize personal defaults: %d %s", page.Code, page.Body.String())
 		}
 		page = serveForm(f, http.MethodGet, "/settings", owner.cookies, nil)
-		if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `value="`+owner.channel+`" selected`) || !strings.Contains(page.Body.String(), `name="default_timeout_ms" value="`+strconv.Itoa(owner.timeout)+`"`) || !strings.Contains(page.Body.String(), `href="/sources"`) {
+		if page.Code != http.StatusOK || apiField(t, page.Body.String(), "default_timeout_ms").Value != strconv.Itoa(owner.timeout) {
 			t.Fatalf("settings page lost personal defaults or global sources link: %d %s", page.Code, page.Body.String())
 		}
 		if strings.Contains(page.Body.String(), "Manage OTP sources") || strings.Contains(page.Body.String(), "<h2>OTP sources</h2>") {
 			t.Fatal("OTP configuration appears inside global Settings instead of its own page")
 		}
+		assertSettingsSelectChoice(t, page.Body.String(), "browser_channel", owner.channel)
 		assertSettingsSelectChoice(t, page.Body.String(), "default_confirmation_mode", string(account.DefaultConfirmationMode))
 		for name, values := range accountSettingsPageValues(account) {
-			if name != "browser_channel" && name != "headless" && name != "default_confirmation_mode" && !strings.Contains(page.Body.String(), `name="`+name+`" value="`+values[0]+`"`) {
+			if name != "browser_channel" && name != "headless" && name != "default_confirmation_mode" && apiField(t, page.Body.String(), name).Value != values[0] {
 				t.Fatalf("global settings page lost %s=%s", name, values[0])
 			}
 		}
 	}
 	response := serveForm(f, http.MethodPost, "/lakes/buntzen/reset", adminCookies, url.Values{"csrf_token": {csrfFrom(adminCookies)}, "user_id": {strconv.FormatInt(member.ID, 10)}})
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/lakes/buntzen?notice=lake-defaults-reset#defaults" {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/api/lakes/buntzen?notice=lake-defaults-reset#defaults" {
 		t.Fatalf("reset lake defaults = %d %s", response.Code, response.Body.String())
 	}
 	if _, err := f.store.ForUser(f.admin.ID).GetLakeSettings(ctx, "buntzen"); !errors.Is(err, store.ErrNotFound) {
@@ -234,7 +242,7 @@ func TestSettingsAndLakePagesSavePersonalDefaultsAndResetOnlyTheirOwner(t *testi
 		t.Fatalf("reset touched another account: %+v %v", memberDefaults, err)
 	}
 	page := serveForm(f, http.MethodGet, "/lakes/buntzen", adminCookies, nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `name="timezone" value="America/Vancouver"`) || !strings.Contains(page.Body.String(), `name="all_day_pass_url" value="https://example.test/`) || !strings.Contains(page.Body.String(), "Default preferences") || strings.Contains(page.Body.String(), `action="/lakes/buntzen/reset"`) {
+	if page.Code != http.StatusOK || apiField(t, page.Body.String(), "timezone").Value != "America/Vancouver" || !strings.HasPrefix(apiField(t, page.Body.String(), "all_day_pass_url").Value, "https://example.test/") || apiData[lakePageData](t, page.Body.String(), "lake").Saved {
 		t.Fatalf("reset did not restore approved built-in values: %d %s", page.Code, page.Body.String())
 	}
 	for _, owner := range owners {
@@ -327,7 +335,7 @@ func TestLakeSettingsPageRejectsInvalidInputWithoutLosingDraft(t *testing.T) {
 				t.Fatalf("invalid lake defaults = %d %s", response.Code, body)
 			}
 			for _, name := range []string{"timezone", "release_days_before", "all_day_pass_url"} {
-				if !strings.Contains(body, `name="`+name+`" value="`+values.Get(name)+`"`) {
+				if apiField(t, body, name).Value != values.Get(name) {
 					t.Errorf("validation lost entered %s=%q", name, values.Get(name))
 				}
 			}
@@ -369,15 +377,16 @@ func TestPersonalSettingsValidationPreservesInput(t *testing.T) {
 			values.Set(test.name, test.value)
 			response := serveForm(f, http.MethodPost, "/settings", cookies, values)
 			body := response.Body.String()
-			if response.Code != http.StatusUnprocessableEntity || !strings.Contains(body, test.message) || !strings.Contains(body, `value="chrome-beta" selected`) {
+			if response.Code != http.StatusUnprocessableEntity || !strings.Contains(body, test.message) {
 				t.Fatalf("invalid global defaults lost form input: %d %s", response.Code, body)
 			}
+			assertSettingsSelectChoice(t, body, "browser_channel", "chrome-beta")
 			assertSettingsSelectChoice(t, body, "default_confirmation_mode", values.Get("default_confirmation_mode"))
 			for name, submitted := range values {
 				if name == "csrf_token" || name == "browser_channel" || name == "headless" || name == "default_confirmation_mode" {
 					continue
 				}
-				if !strings.Contains(html.UnescapeString(body), `name="`+name+`" value="`+submitted[0]+`"`) {
+				if apiField(t, body, name).Value != submitted[0] {
 					t.Errorf("invalid global defaults lost raw numeric input %s=%s", name, submitted[0])
 				}
 			}

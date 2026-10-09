@@ -312,7 +312,8 @@ verify the effective container settings before exposing the service.
 
 ## Build inputs and dependency updates
 
-The Docker frontend and both base images are pinned by digest. Go module
+The Dockerfile frontend and all base images are pinned by digest. Frontend
+dependencies use a committed npm lockfile, npm ci and dependency auditing. Go module
 checksums and Python runtime wheel hashes are verified; the image accepts binary
 Python wheels only. The exact setuptools version is a development dependency in
 `actions/uv.lock`. Normal `uv sync --locked` installs that backend using the lock's

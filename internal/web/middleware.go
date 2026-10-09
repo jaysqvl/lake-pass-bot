@@ -188,7 +188,7 @@ func (s *Server) authenticated(next http.HandlerFunc) http.HandlerFunc {
 		ctx := context.WithValue(r.Context(), sessionContextKey, requestSession{Authenticated: authenticated, CSRFToken: csrfValue.Value})
 		authenticatedRequest := r.WithContext(ctx)
 		if authenticated.User.MustChangePassword && r.URL.Path != "/account" && r.URL.Path != "/account/password" && r.URL.Path != "/logout" {
-			http.Redirect(w, authenticatedRequest, "/account?password=required", http.StatusSeeOther)
+			apiRedirect(w, authenticatedRequest, "/account?password=required", http.StatusSeeOther)
 			return
 		}
 		next(w, authenticatedRequest)
@@ -219,10 +219,10 @@ func (s *Server) unauthorized(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if hasUsers, err := s.store.HasUsers(r.Context()); err == nil && !hasUsers {
-		http.Redirect(w, r, "/setup", http.StatusSeeOther)
+		apiRedirect(w, r, "/setup", http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	apiRedirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func requestAuth(r *http.Request) requestSession {

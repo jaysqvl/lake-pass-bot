@@ -50,7 +50,7 @@ func TestPendingJobPagesAndStreamExplainStartAndConfirmation(t *testing.T) {
 			path := fmt.Sprintf("/jobs/%d", job.ID)
 			for _, path := range []string{path, "/jobs"} {
 				page := serveForm(fixture, http.MethodGet, path, cookies, nil)
-				for _, want := range []string{"Book pass", "Waiting to start", "Earliest start", test.localLabel, test.confirmation} {
+				for _, want := range []string{"Book pass", "Waiting to start", test.localLabel, test.confirmation} {
 					if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), want) {
 						t.Fatalf("%s missing %q: status=%d body=%q", path, want, page.Code, page.Body.String())
 					}

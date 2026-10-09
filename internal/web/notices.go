@@ -32,5 +32,5 @@ func noticeFor(code string) *Flash {
 func redirectNotice(w http.ResponseWriter, r *http.Request, path, code string) {
 	path, fragment, _ := strings.Cut(path, "#")
 	location := url.URL{Path: path, Fragment: fragment, RawQuery: url.Values{"notice": {code}}.Encode()}
-	http.Redirect(w, r, location.String(), http.StatusSeeOther)
+	apiRedirect(w, r, location.String(), http.StatusSeeOther)
 }

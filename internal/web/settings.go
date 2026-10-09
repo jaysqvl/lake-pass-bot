@@ -39,7 +39,7 @@ func (s *Server) settingsUpdate(w http.ResponseWriter, r *http.Request) {
 		s.renderSettingsPage(w, r, value, problem)
 		return
 	}
-	http.Redirect(w, r, "/settings?ok=updated", http.StatusSeeOther)
+	apiRedirect(w, r, "/settings?ok=updated", http.StatusSeeOther)
 }
 
 func accountSettingsInput(r *http.Request) (model.AccountSettings, error) {
@@ -120,5 +120,5 @@ func (s *Server) renderSettingsPage(w http.ResponseWriter, r *http.Request, valu
 			}
 		}
 	}
-	s.render(w, formStatus(problem), "settings", data)
+	s.respond(w, formStatus(problem), "settings", data)
 }

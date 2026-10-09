@@ -14,7 +14,7 @@ import (
 )
 
 func (s *Server) profiles(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/lakes", http.StatusSeeOther)
+	apiRedirect(w, r, "/lakes", http.StatusSeeOther)
 }
 
 func profileCard(profile model.Profile, sourceName string) listCard {
@@ -51,7 +51,7 @@ func (s *Server) profileCreate(w http.ResponseWriter, r *http.Request) {
 		s.profileForm(w, r, nil, safeFormError(err))
 		return
 	}
-	http.Redirect(w, r, lakeConnectionURL(lake)+"?ok=created#connection", http.StatusSeeOther)
+	apiRedirect(w, r, lakeConnectionURL(lake)+"?ok=created#connection", http.StatusSeeOther)
 }
 func (s *Server) profileEdit(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
@@ -84,7 +84,7 @@ func (s *Server) profileUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lake, _ := profileLakeContext(r, &current)
-	http.Redirect(w, r, lakeConnectionURL(lake)+"?ok=updated#connection", http.StatusSeeOther)
+	apiRedirect(w, r, lakeConnectionURL(lake)+"?ok=updated#connection", http.StatusSeeOther)
 }
 
 func (s *Server) profileSignIn(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +116,7 @@ func (s *Server) profileSignIn(w http.ResponseWriter, r *http.Request) {
 		s.renderLakePage(w, r, nil, safeFormError(err))
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/jobs/%d", job.ID), http.StatusSeeOther)
+	apiRedirect(w, r, fmt.Sprintf("/jobs/%d", job.ID), http.StatusSeeOther)
 }
 
 // A connection is configured through a catalog lake, never through a caller's
@@ -253,7 +253,7 @@ func (s *Server) profileForm(w http.ResponseWriter, r *http.Request, profile *mo
 			data.Flash = &Flash{Kind: "info", Message: "A pending job is using this sign-in. View the job to follow progress or cancel before editing.", ActionLabel: "View job", ActionURL: fmt.Sprintf("/jobs/%d", job.ID)}
 		}
 	}
-	s.render(w, formStatus(formError), "form", data)
+	s.respond(w, formStatus(formError), "form", data)
 }
 
 func (s *Server) pendingResourceJob(r *http.Request, matches func(model.Job) bool) (*model.Job, error) {

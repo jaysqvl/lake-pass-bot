@@ -25,12 +25,20 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+      - name: Build embedded frontend
+        working-directory: web/frontend
+        run: npm ci && npm run build
       - name: Release metadata consistency
         run: python3 scripts/check_release_config.py
       - name: Public-tree privacy guard
         run: python3 scripts/check_public_tree.py
       - name: Formatting
-        run: test -z "$(gofmt -l cmd internal integration)"
+        run: test -z "$(gofmt -l cmd internal integration scripts/ui-fixture)"
       - name: Verify module checksums
         run: go mod verify
       - name: Workflow lint
@@ -45,10 +53,36 @@ jobs:
         run: go vet ./...
       - name: Unit and package tests
         run: go test -race -count=1 ./...
-      - name: Browser client event tests
-        run: node --test internal/web/testdata/client.test.cjs
       - name: Reachable vulnerability scan
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Frontend checks and production build
+        working-directory: web/frontend
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+          npm test
+          npm run build
+      - name: Install UI browser
+        working-directory: web/frontend
+        run: npx playwright install --with-deps chromium
+      - name: React UI journeys against the Go API
+        working-directory: web/frontend
+        run: npm run test:browser
 
   python-actions:
     runs-on: ubuntu-latest
@@ -111,7 +145,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [go, python-actions, integration]
+    needs: [go, frontend, python-actions, integration]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1

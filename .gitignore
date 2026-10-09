@@ -11,3 +11,13 @@ appdata/
 .native-appdata/
 /buntzen
 /lake-pass-bot
+
+# React frontend
+**/node_modules/
+web/frontend/.vite/
+web/frontend/test-results/
+web/frontend/playwright-report/
+web/frontend/*.tsbuildinfo
+internal/web/dist/*
+!internal/web/dist/.keep
+/bin/

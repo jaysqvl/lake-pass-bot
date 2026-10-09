@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"sync"
@@ -20,7 +19,6 @@ type Server struct {
 	config            config.Config
 	store             *store.Store
 	engine            *engine.Engine
-	renderer          *Renderer
 	mux               *http.ServeMux
 	loginMu           sync.Mutex
 	streams           streamAdmission
@@ -49,12 +47,8 @@ func NewServer(cfg config.Config, database *store.Store, runner *engine.Engine) 
 			return nil, err
 		}
 	}
-	renderer, err := NewRenderer()
-	if err != nil {
-		return nil, err
-	}
 	server := &Server{
-		config: cfg, store: database, engine: runner, renderer: renderer,
+		config: cfg, store: database, engine: runner,
 		mux: http.NewServeMux(), accountChangeBusy: make(map[int64]struct{}),
 	}
 	server.routes()
@@ -62,14 +56,14 @@ func NewServer(cfg config.Config, database *store.Store, runner *engine.Engine) 
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.requestLogging(s.browserErrorPages(s.securityHeaders(s.mux)))
+	root := http.NewServeMux()
+	root.HandleFunc("GET /healthz", s.health)
+	root.Handle("/api/", http.StripPrefix("/api", s.mux))
+	root.Handle("/", frontendHandler())
+	return s.requestLogging(s.apiErrors(s.securityHeaders(root)))
 }
 
 func (s *Server) routes() {
-	s.mux.HandleFunc("GET /healthz", s.health)
-	s.mux.HandleFunc("GET /static/", func(w http.ResponseWriter, r *http.Request) {
-		http.StripPrefix("/static", http.HandlerFunc(s.renderer.Static)).ServeHTTP(w, r)
-	})
 	s.mux.HandleFunc("GET /login", s.loginPage)
 	s.mux.HandleFunc("POST /login", s.login)
 	s.mux.HandleFunc("GET /setup", s.setupPage)
@@ -157,12 +151,6 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok\n"))
-}
-
-func (s *Server) render(w http.ResponseWriter, status int, name string, data any) {
-	if err := s.renderer.Render(w, status, name, data); err != nil {
-		slog.Error("template render failed", "template", name, "error", err)
-	}
 }
 
 func pathID(w http.ResponseWriter, r *http.Request) (int64, bool) {

@@ -33,7 +33,7 @@ func TestQuickBookingJourneyKeepsEachVisitsSettingsAndHistory(t *testing.T) {
 		t.Fatalf("jobs=%+v err=%v response=%d %s", jobs, err, response.Code, response.Body.String())
 	}
 	first := jobs[0]
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != fmt.Sprintf("/jobs/%d?ok=queued", first.ID) {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != fmt.Sprintf("/api/jobs/%d?ok=queued", first.ID) {
 		t.Fatalf("did not open new job: %d %s", response.Code, response.Header().Get("Location"))
 	}
 	if first.ProfileID != profile.ID || first.BookingRequestID == nil || first.RunImmediately {
@@ -59,7 +59,7 @@ func TestQuickBookingJourneyKeepsEachVisitsSettingsAndHistory(t *testing.T) {
 		t.Fatalf("later defaults altered queued visit: %+v, %v", firstRequest, err)
 	}
 	page := serveForm(f, http.MethodGet, "/", cookies, nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), fmt.Sprintf(`href="/jobs/%d"`, first.ID)) || strings.Contains(page.Body.String(), firstRequest.Name) {
+	if page.Code != http.StatusOK || apiData[dashboardData](t, page.Body.String(), "dashboard").Bookings[0].URL != fmt.Sprintf("/jobs/%d", first.ID) || strings.Contains(page.Body.String(), firstRequest.Name) {
 		t.Fatalf("upcoming visit lacks job link or leaked internal name: %d %s", page.Code, page.Body.String())
 	}
 	for _, status := range []model.JobStatus{model.JobRunning, model.JobSucceeded} {

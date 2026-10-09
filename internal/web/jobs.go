@@ -38,7 +38,7 @@ func (s *Server) jobs(w http.ResponseWriter, r *http.Request) {
 		s.internal(w)
 		return
 	}
-	s.render(w, http.StatusOK, "jobs", jobsData{BaseData: base(r, "Jobs"), Jobs: s.jobRows(r.Context(), userStore, jobs)})
+	s.respond(w, http.StatusOK, "jobs", jobsData{BaseData: base(r, "Jobs"), Jobs: s.jobRows(r.Context(), userStore, jobs)})
 }
 
 func (s *Server) jobRows(ctx context.Context, userStore store.UserStore, jobs []model.Job) []jobRow {
@@ -178,7 +178,7 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 		data.Events = append(data.Events, eventView{Time: event.CreatedAt.In(location).Format("15:04:05 -07:00"), Type: event.Kind, Message: event.Message})
 		data.LastEventID = event.ID
 	}
-	s.render(w, http.StatusOK, "job", data)
+	s.respond(w, http.StatusOK, "job", data)
 }
 
 func (s *Server) jobEvents(w http.ResponseWriter, r *http.Request) {

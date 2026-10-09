@@ -100,7 +100,7 @@ func TestLakeBookingSelectionRejectsUnsupportedLakesAndRetiredRequestRoutes(t *t
 	_, saved := createImmediateWebBooking(t, fixture, fixture.admin.ID, "lake owner", true)
 	cookies := loginCookies(t, fixture)
 	page := serveForm(fixture, http.MethodGet, "/bookings", cookies, nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "/bookings/new?lake_id=buntzen") || !strings.Contains(page.Body.String(), "Buntzen Lake") {
+	if page.Code != http.StatusOK || len(apiData[lakeBookingsData](t, page.Body.String(), "bookings").Lakes) != 1 || !apiData[lakeBookingsData](t, page.Body.String(), "bookings").Lakes[0].Ready || !strings.Contains(page.Body.String(), "Buntzen Lake") {
 		t.Fatal("bookings did not expose the supported lake")
 	}
 	path := "/bookings/" + stringID(saved.ID)

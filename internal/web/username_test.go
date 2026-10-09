@@ -28,7 +28,7 @@ func TestAccountUsernameChangeKeepsSessionAndUsesAuthenticatedOwner(t *testing.T
 			}
 			cookies := loginCookiesAs(t, fixture, user.Username, password)
 			page := serveForm(fixture, http.MethodGet, "/account", cookies, nil)
-			if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `action="/account/username"`) || !strings.Contains(page.Body.String(), `value="`+user.Username+`"`) {
+			if page.Code != http.StatusOK || apiData[accountPageData](t, page.Body.String(), "account").PasswordRequired || apiData[accountPageData](t, page.Body.String(), "account").FormUsername != user.Username {
 				t.Fatalf("account username form = %d: %s", page.Code, page.Body.String())
 			}
 			newName := "Renamed." + user.Username
@@ -38,7 +38,7 @@ func TestAccountUsernameChangeKeepsSessionAndUsesAuthenticatedOwner(t *testing.T
 				"user_id": {strconv.FormatInt(other.ID, 10)}, "id": {strconv.FormatInt(other.ID, 10)}, "role": {"admin"}, "status": {"disabled"},
 			}
 			response := serveForm(fixture, http.MethodPost, "/account/username", cookies, form)
-			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/account?ok=username-changed" || len(response.Result().Cookies()) != 0 {
+			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/api/account?ok=username-changed" || len(response.Result().Cookies()) != 0 {
 				t.Fatalf("rename = %d location=%q cookies=%v body=%s", response.Code, response.Header().Get("Location"), response.Result().Cookies(), response.Body.String())
 			}
 			current, err := fixture.store.GetUser(ctx, user.ID)
@@ -50,7 +50,7 @@ func TestAccountUsernameChangeKeepsSessionAndUsesAuthenticatedOwner(t *testing.T
 				t.Fatalf("another account changed=%+v err=%v", unchanged, err)
 			}
 			page = serveForm(fixture, http.MethodGet, response.Header().Get("Location"), cookies, nil)
-			if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "You are signed in as <strong>"+newName+"</strong>") || !strings.Contains(page.Body.String(), "Username changed.") || strings.Contains(page.Body.String(), password) {
+			if page.Code != http.StatusOK || apiData[accountPageData](t, page.Body.String(), "account").Username != newName || !strings.Contains(page.Body.String(), "Username changed.") || strings.Contains(page.Body.String(), password) {
 				t.Fatalf("existing session account page = %d: %s", page.Code, page.Body.String())
 			}
 			// Exercise both HTTP login paths after the rename, including normal case folding.
@@ -62,7 +62,7 @@ func TestAccountUsernameChangeKeepsSessionAndUsesAuthenticatedOwner(t *testing.T
 			oldLogin := serveForm(fixture, http.MethodPost, "/login", []*http.Cookie{loginCSRF}, url.Values{
 				"csrf_token": {loginCSRF.Value}, "username": {user.Username}, "password": {password},
 			})
-			if oldLogin.Code != http.StatusSeeOther || oldLogin.Header().Get("Location") != "/login?error=invalid" {
+			if oldLogin.Code != http.StatusSeeOther || oldLogin.Header().Get("Location") != "/api/login?error=invalid" {
 				t.Fatalf("old username login = %d location=%q", oldLogin.Code, oldLogin.Header().Get("Location"))
 			}
 			for _, cookie := range oldLogin.Result().Cookies() {
@@ -93,7 +93,7 @@ func TestAccountUsernameChangeRejectsInvalidAndDuplicateWithoutEchoingPassword(t
 				"csrf_token": {csrfFrom(cookies)}, "username": {tc.username}, "current_password": {tc.password},
 			})
 			body := response.Body.String()
-			if response.Code != http.StatusUnprocessableEntity || !strings.Contains(body, tc.message) || !strings.Contains(body, `value="`+tc.username+`"`) || strings.Contains(body, tc.password) {
+			if response.Code != http.StatusUnprocessableEntity || !strings.Contains(body, tc.message) || apiData[accountPageData](t, body, "account").FormUsername != tc.username || strings.Contains(body, tc.password) {
 				t.Fatalf("rejected username form = %d: %s", response.Code, body)
 			}
 			current, err := fixture.store.GetUser(context.Background(), member.ID)
@@ -127,7 +127,7 @@ func TestAccountUsernameChangeRequiresSessionCSRFAndOrigin(t *testing.T) {
 			request.Header.Set("Origin", tc.origin)
 			response := httptest.NewRecorder()
 			fixture.handler.ServeHTTP(response, request)
-			if response.Code != tc.status || (tc.status == http.StatusSeeOther && response.Header().Get("Location") != "/login") {
+			if response.Code != tc.status || (tc.status == http.StatusSeeOther && response.Header().Get("Location") != "/api/login") {
 				t.Fatalf("unauthorized rename = %d location=%q", response.Code, response.Header().Get("Location"))
 			}
 		})
@@ -143,7 +143,7 @@ func TestAccountUsernameChangeRequiresSessionCSRFAndOrigin(t *testing.T) {
 	response := serveForm(fixture, http.MethodPost, "/account/username", cookies, url.Values{
 		"csrf_token": {csrfFrom(cookies)}, "username": {"renamed-admin"}, "current_password": {"long-test-password"},
 	})
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/login" {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/api/login" {
 		t.Fatalf("revoked session rename = %d location=%q", response.Code, response.Header().Get("Location"))
 	}
 	current, err := fixture.store.GetUser(context.Background(), fixture.admin.ID)
@@ -162,13 +162,13 @@ func TestAccountUsernameChangeCannotBypassTemporaryPasswordRequirement(t *testin
 	}
 	cookies := loginCookiesAs(t, fixture, member.Username, "temporary-member-password")
 	page := serveForm(fixture, http.MethodGet, "/account", cookies, nil)
-	if page.Code != http.StatusOK || strings.Contains(page.Body.String(), `action="/account/username"`) {
+	if page.Code != http.StatusOK || !apiData[accountPageData](t, page.Body.String(), "account").PasswordRequired {
 		t.Fatalf("temporary account offers rename: %d: %s", page.Code, page.Body.String())
 	}
 	response := serveForm(fixture, http.MethodPost, "/account/username", cookies, url.Values{
 		"csrf_token": {csrfFrom(cookies)}, "username": {"renamed-member"}, "current_password": {"temporary-member-password"},
 	})
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/account?password=required" {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/api/account?password=required" {
 		t.Fatalf("temporary password bypass = %d location=%q", response.Code, response.Header().Get("Location"))
 	}
 	current, err := fixture.store.GetUser(context.Background(), member.ID)

@@ -86,7 +86,7 @@ func (s *Server) lakeBookingsPage(w http.ResponseWriter, r *http.Request) {
 			Lake: lake, Ready: problem == "", Problem: problem,
 		})
 	}
-	s.render(w, http.StatusOK, "bookings", data)
+	s.respond(w, http.StatusOK, "bookings", data)
 }
 
 type quickBookingData struct {
@@ -157,7 +157,7 @@ func (s *Server) renderQuickBooking(w http.ResponseWriter, r *http.Request, form
 		field.Options = append(field.Options, selectOption{Label: "None", Selected: selected == ""})
 		data.Passes.Fields = append(data.Passes.Fields, field)
 	}
-	s.render(w, formStatus(formError), "quick_booking", data)
+	s.respond(w, formStatus(formError), "quick_booking", data)
 }
 
 func (s *Server) lakeBookingCreate(w http.ResponseWriter, r *http.Request) {
@@ -204,7 +204,7 @@ func (s *Server) lakeBookingCreate(w http.ResponseWriter, r *http.Request) {
 		s.renderQuickBooking(w, r, message)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/jobs/%d?ok=queued", job.ID), http.StatusSeeOther)
+	apiRedirect(w, r, fmt.Sprintf("/jobs/%d?ok=queued", job.ID), http.StatusSeeOther)
 }
 
 func bookingDisplayName(request model.BookingRequest) string {

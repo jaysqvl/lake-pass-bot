@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -17,10 +16,7 @@ func assertBookingPassChoices(t *testing.T, body string, choices []string) {
 	t.Helper()
 	for i, choice := range choices {
 		field := fmt.Sprintf("pass_priority_%d", i+1)
-		selectMarkup := regexp.MustCompile(`(?s)<select name="` + field + `"[^>]*>(.*?)</select>`).FindStringSubmatch(body)
-		if len(selectMarkup) != 2 || !strings.Contains(selectMarkup[1], `value="`+choice+`" selected`) {
-			t.Fatalf("%s did not retain selection %q: %v", field, choice, selectMarkup)
-		}
+		assertSettingsSelectChoice(t, body, field, choice)
 	}
 }
 
@@ -60,7 +56,7 @@ func TestBookingPassPriorityQueuesInOrderAndPreservesInvalidDraft(t *testing.T) 
 				t.Fatalf("validation response=%d body=%s", response.Code, response.Body.String())
 			}
 			assertBookingPassChoices(t, response.Body.String(), test.choices)
-			if !strings.Contains(response.Body.String(), `name="target_date" value="`+test.date+`"`) {
+			if apiField(t, response.Body.String(), "target_date").Value != test.date {
 				t.Fatal("validation failure discarded the submitted date")
 			}
 			resources := fixture.store.ForUser(fixture.admin.ID)

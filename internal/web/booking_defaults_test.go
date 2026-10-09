@@ -71,7 +71,7 @@ func TestBookingUsesOwnedDefaultsAndKeepsExecutionSnapshots(t *testing.T) {
 		"all_day_pass_url": {"https://attacker.example/pass"}, "confirmation_mode": {"auto"},
 	}
 	response := serveForm(fixture, http.MethodPost, "/bookings/new", cookies, form)
-	if response.Code != http.StatusSeeOther || !strings.HasPrefix(response.Header().Get("Location"), "/jobs/") {
+	if response.Code != http.StatusSeeOther || !strings.HasPrefix(response.Header().Get("Location"), "/api/jobs/") {
 		t.Fatalf("queue=%d %s", response.Code, response.Body.String())
 	}
 	snapshot := latestQueuedBooking(t, fixture, fixture.admin.ID)
@@ -128,7 +128,7 @@ func TestBookingConnectionCannotBeChosenThroughQueryParameters(t *testing.T) {
 	disabled, _ := createImmediateWebBooking(t, fixture, fixture.admin.ID, "Disabled connection", false)
 	cookies := loginCookies(t, fixture)
 	page := serveForm(fixture, http.MethodGet, "/bookings/new?lake_id=buntzen&profile_id="+stringID(disabled.ID), cookies, nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), profile.Name) || strings.Contains(page.Body.String(), disabled.Name) || strings.Contains(page.Body.String(), `name="profile_id"`) {
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), profile.Name) || strings.Contains(page.Body.String(), disabled.Name) || apiFields(t, page.Body.String())["profile_id"].Name != "" {
 		t.Fatalf("query changed the lake's connection: %d %s", page.Code, page.Body.String())
 	}
 }

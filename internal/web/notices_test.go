@@ -35,7 +35,7 @@ func TestBookingFailureExplainsRetainedConfirmationWithoutAnotherJob(t *testing.
 	cookies := loginCookies(t, fixture)
 	response := serveForm(fixture, http.MethodPost, "/bookings/new", cookies,
 		url.Values{"csrf_token": {csrfFrom(cookies)}, "lake_id": {"buntzen"}, "target_date": {booking.TargetDate}, "pass_priority_1": {"all_day"}})
-	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "already has a booking or pending job for that date") || !strings.Contains(response.Body.String(), `role="alert"`) {
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "already has a booking or pending job for that date") || apiData[quickBookingData](t, response.Body.String(), "quick_booking").FormError == "" {
 		t.Fatalf("retained confirmation response=%d body=%s", response.Code, response.Body.String())
 	}
 	if jobs, err := resources.ListJobs(ctx, 10); err != nil || len(jobs) != 1 || jobs[0].Status != model.JobOutcomeUnknown {
@@ -85,7 +85,7 @@ func TestNotificationCannotLinkAnotherOwnersJobOrEchoArbitraryText(t *testing.T)
 		if page.Code != http.StatusOK {
 			t.Fatalf("notice page=%d", page.Code)
 		}
-		for _, unwanted := range []string{fmt.Sprintf(`href="/jobs/%d"`, job.ID), "View existing job", "private-notice", "attacker.invalid", "injected"} {
+		for _, unwanted := range []string{fmt.Sprintf("/jobs/%d", job.ID), "View existing job", "private-notice", "attacker.invalid", "injected"} {
 			if strings.Contains(page.Body.String(), unwanted) {
 				t.Fatalf("notification exposed %q", unwanted)
 			}

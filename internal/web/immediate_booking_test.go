@@ -87,12 +87,12 @@ func TestRetiredBookingRequestsHaveNoUIOrRoutesForAnyOwner(t *testing.T) {
 	foreign, foreignBooking := createImmediateWebBooking(t, fixture, member.ID, "foreign", true)
 	cookies := loginCookies(t, fixture)
 	page := serveForm(fixture, http.MethodGet, "/bookings", cookies, nil)
-	for _, want := range []string{"Buntzen Lake", "/bookings/new?lake_id=buntzen"} {
+	for _, want := range []string{"Buntzen Lake", `"Ready":true`} {
 		if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), want) {
 			t.Fatalf("booking page missing %q: %d body=%q", want, page.Code, page.Body.String())
 		}
 	}
-	for _, unwanted := range []string{booking.Name, foreign.Name, foreignBooking.Name, "Saved requests", "View request", "Delete saved request", `name="timing"`} {
+	for _, unwanted := range []string{booking.Name, foreign.Name, foreignBooking.Name, "Saved requests", "View request", "Delete saved request", `"Name":"timing"`} {
 		if strings.Contains(page.Body.String(), unwanted) {
 			t.Fatalf("bookings retained old UI or exposed another account: %s", unwanted)
 		}
@@ -214,7 +214,7 @@ func TestBookingAutomaticallySchedulesFutureDatesAndRejectsPastDates(t *testing.
 				if len(jobs) != 1 || jobs[0].RunImmediately || !jobs[0].DueAt.After(time.Now()) {
 					t.Fatalf("future date was not scheduled: %+v", jobs)
 				}
-			} else if len(jobs) != 0 || !strings.Contains(response.Body.String(), "Choose today or a future visit date") || !strings.Contains(response.Body.String(), `role="alert"`) {
+			} else if len(jobs) != 0 || !strings.Contains(response.Body.String(), "Choose today or a future visit date") || apiData[quickBookingData](t, response.Body.String(), "quick_booking").FormError == "" {
 				t.Fatalf("past date was not rejected: jobs=%+v body=%s", jobs, response.Body.String())
 			}
 		})

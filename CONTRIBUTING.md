@@ -35,7 +35,8 @@ implementation is usually better here than a reusable framework.
 | --- | --- |
 | `cmd/lake-pass-bot` | Process setup and CLI dispatch |
 | `internal/destinations` | Supported lakes, provider IDs, URL and release defaults |
-| `internal/web` | HTTP authorization, forms, rendering, live job presentation |
+| `web/frontend` | React/TypeScript pages, components, routing, forms, live job presentation |
+| `internal/web` | Same-origin JSON API, HTTP authorization, validated form inputs, SSE, embedded frontend assets |
 | `internal/engine` | Queueing, scheduling, job execution, provider composition, storage maintenance |
 | `internal/store` | SQLite transactions, ownership, leases, durable state and booking admission |
 | `internal/model`, `internal/scheduler`, `internal/origin` | Domain values and pure policies; no database or browser access |
@@ -63,7 +64,7 @@ process boundary; do not silently turn programming errors into success.
 ## Tests and review
 
 - When replacing a workflow, trace its routes, handlers, storage mutations,
-  background work, templates, and callers. Remove the superseded behavior in the
+  background work, frontend components, and callers. Remove the superseded behavior in the
   same change. Retain compatibility only for a named caller or stored-data
   requirement, and keep contributor guidance consistent with the resulting flow.
 - Review the complete user journey, including existing-account upgrades and
@@ -92,7 +93,7 @@ For a Go change, run the affected packages, then the full suite when integration
 or shared behavior changes:
 
 ```bash
-gofmt -w cmd internal integration
+gofmt -w cmd internal integration scripts/ui-fixture
 go vet ./...
 go test -race -count=1 ./...
 ```
@@ -106,10 +107,23 @@ uvx --from ruff==0.12.10 ruff check actions scripts/check_build_backend.py \
 uv run --project actions --locked python -m unittest discover -s actions/tests
 ```
 
-The UI event tests use Node 18 or newer and its built-in test runner:
+Use React and TypeScript for application UI changes. Follow the existing
+Tailwind/shadcn component conventions. Do not add HTMX or Go HTML templates for
+application pages. Provider HTML fixtures in `integration/testdata` exercise an
+external site and have a separate purpose.
+
+With Node.js 24, build the embedded frontend before Go checks. React component
+tests cover forms and transient job state; Playwright exercises the real Go API
+with an isolated database and disabled workers:
 
 ```bash
-node --test internal/web/testdata/client.test.cjs
+cd web/frontend
+npm ci
+npm test
+npm run build
+npx playwright install chromium
+npm run test:browser
+cd ../..
 ```
 
 Run [browser integration](integration/README.md) for browser or cross-process
@@ -121,3 +135,5 @@ Portainer template with both the default `latest` image and an explicit digest.
 CI additionally checks release metadata, public-tree privacy, dependencies, and
 the built container. A passing synthetic test is not proof of a completed live
 Yodel booking; report that distinction in reviews.
+
+See [frontend development](docs/frontend.md) for API, build, and session rules.

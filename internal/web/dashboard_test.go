@@ -41,12 +41,11 @@ func TestHomeShowsLakeStatusAndLakeOwnsSignInManagement(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("home=%d %s", response.Code, body)
 	}
-	for _, text := range []string{`id="home-lakes"`, "Your lakes", "Buntzen Lake", `href="/lakes/buntzen#connection"`, `href="/lakes"`} {
-		if !strings.Contains(body, text) {
-			t.Errorf("Home missing %q", text)
-		}
+	data := apiData[dashboardData](t, body, "dashboard")
+	if len(data.Connections) != 1 || data.Connections[0].Lake.Name != "Buntzen Lake" || data.Connections[0].ActionURL != "/lakes/buntzen#connection" {
+		t.Error("Home lost its lake connection summary")
 	}
-	for _, text := range []string{`id="yodel-sign-in"`, `action="/profiles/`, "Sign in to Yodel", "Private inbox", "Private sign-in", "legacy vehicle", "5559876543", "https://example.test/login"} {
+	for _, text := range []string{`"PostActions":`, "Sign in to Yodel", "Private inbox", "Private sign-in", "legacy vehicle", "5559876543", "https://example.test/login"} {
 		if strings.Contains(body, text) {
 			t.Errorf("Home exposed provider setup or private data %q", text)
 		}
@@ -56,7 +55,7 @@ func TestHomeShowsLakeStatusAndLakeOwnsSignInManagement(t *testing.T) {
 		t.Fatalf("lake=%d %s", lake.Code, lake.Body.String())
 	}
 	for _, profile := range own {
-		if !strings.Contains(lake.Body.String(), fmt.Sprintf(`action="/profiles/%d/sign-in"`, profile.ID)) {
+		if !hasPostAction(t, lake.Body.String(), fmt.Sprintf("/profiles/%d/sign-in", profile.ID)) {
 			t.Errorf("Lake lost existing sign-in %d", profile.ID)
 		}
 	}
@@ -71,20 +70,20 @@ func TestHomeRedirectsUnconfiguredAccountToLakes(t *testing.T) {
 	f := newWebFixture(t)
 	cookies := loginCookies(t, f)
 	response := serveForm(f, http.MethodGet, "/", cookies, nil)
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/lakes" {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/api/lakes" {
 		t.Fatalf("Home setup redirect=%d %s", response.Code, response.Header().Get("Location"))
 	}
 	lakes := serveForm(f, http.MethodGet, "/lakes", cookies, nil)
-	if lakes.Code != http.StatusOK || !strings.Contains(lakes.Body.String(), "Start with a lake") || !strings.Contains(lakes.Body.String(), "Buntzen Lake") || strings.Contains(lakes.Body.String(), "Yodel sign-in") {
+	if lakes.Code != http.StatusOK || apiData[lakesPageData](t, lakes.Body.String(), "lakes").Configured || !strings.Contains(lakes.Body.String(), "Buntzen Lake") || strings.Contains(lakes.Body.String(), "Yodel sign-in") {
 		t.Fatalf("lake onboarding=%d %s", lakes.Code, lakes.Body.String())
 	}
 	lake := serveForm(f, http.MethodGet, "/lakes/buntzen", cookies, nil)
-	if lake.Code != http.StatusOK || !strings.Contains(lake.Body.String(), "Set up login codes first") || !strings.Contains(lake.Body.String(), `href="/sources"`) {
+	if lake.Code != http.StatusOK || apiData[lakePageData](t, lake.Body.String(), "lake").Connection.DefaultSourceName != "" {
 		t.Fatalf("lake connection setup=%d %s", lake.Code, lake.Body.String())
 	}
 	createDefaultSignInSource(t, f, f.admin.ID, "My inbox")
 	response = serveForm(f, http.MethodGet, "/", cookies, nil)
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/lakes" {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/api/lakes" {
 		t.Fatal("OTP source alone must not complete lake setup")
 	}
 }

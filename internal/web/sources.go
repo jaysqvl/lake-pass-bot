@@ -45,7 +45,7 @@ func (s *Server) sources(w http.ResponseWriter, r *http.Request) {
 		}
 		data.Cards = append(data.Cards, card)
 	}
-	s.render(w, http.StatusOK, "list", data)
+	s.respond(w, http.StatusOK, "list", data)
 }
 
 func (s *Server) sourceDefault(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +167,7 @@ func (s *Server) sourceCreate(w http.ResponseWriter, r *http.Request) {
 		s.sourceForm(w, r, nil, safeFormError(err))
 		return
 	}
-	http.Redirect(w, r, "/sources?ok=created", http.StatusSeeOther)
+	apiRedirect(w, r, "/sources?ok=created", http.StatusSeeOther)
 }
 
 func (s *Server) sourceEdit(w http.ResponseWriter, r *http.Request) {
@@ -201,7 +201,7 @@ func (s *Server) sourceUpdate(w http.ResponseWriter, r *http.Request) {
 		s.sourceForm(w, r, &current, safeFormError(err))
 		return
 	}
-	http.Redirect(w, r, "/sources?ok=updated", http.StatusSeeOther)
+	apiRedirect(w, r, "/sources?ok=updated", http.StatusSeeOther)
 }
 
 func (s *Server) sourceHealth(w http.ResponseWriter, r *http.Request) {
@@ -226,7 +226,7 @@ func (s *Server) sourceHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("OTP provider health check succeeded", "source_id", source.ID, "provider", source.Provider)
-	http.Redirect(w, r, "/sources?ok=healthy", http.StatusSeeOther)
+	apiRedirect(w, r, "/sources?ok=healthy", http.StatusSeeOther)
 }
 
 func (s *Server) sourcePair(w http.ResponseWriter, r *http.Request) {
@@ -261,7 +261,7 @@ func (s *Server) sourcePair(w http.ResponseWriter, r *http.Request) {
 		redirectNotice(w, r, "/sources", code)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/jobs/%d?ok=queued", job.ID), http.StatusSeeOther)
+	apiRedirect(w, r, fmt.Sprintf("/jobs/%d?ok=queued", job.ID), http.StatusSeeOther)
 }
 
 func (s *Server) sourceInput(r *http.Request, current *model.OTPSource) (store.OTPSourceInput, error) {
@@ -449,7 +449,7 @@ func (s *Server) sourceForm(w http.ResponseWriter, r *http.Request, source *mode
 			data.Flash = &Flash{Kind: "info", Message: "A pending job is using this OTP source. View the job to follow progress or cancel before editing.", ActionLabel: "View job", ActionURL: fmt.Sprintf("/jobs/%d", job.ID)}
 		}
 	}
-	s.render(w, formStatus(formError), "form", data)
+	s.respond(w, formStatus(formError), "form", data)
 }
 
 func secretPlaceholder(creating bool) string {
