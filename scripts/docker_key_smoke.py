@@ -1,62 +1,69 @@
-"""Exercise retained encrypted credentials using only the local app's UI."""
+"""Exercise retained encrypted credentials through the local app's JSON API."""
 from __future__ import annotations
 
-from html.parser import HTMLParser
+import argparse
 from http.cookiejar import CookieJar
+import json
 import os
 import sqlite3
-import sys
 from urllib.parse import urlencode
-from urllib.request import HTTPCookieProcessor, Request, build_opener
+from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, Request, build_opener
 
 
-class FormParser(HTMLParser):
-    def __init__(self, action):
-        super().__init__()
-        self.action = action
-        self.in_form = False
-        self.csrf = []
-
-    def handle_starttag(self, tag, attrs):
-        fields = dict(attrs)
-        if tag == "form":
-            self.in_form = fields.get("action") == self.action
-        if self.in_form and tag == "input" and fields.get("name") == "csrf_token":
-            self.csrf.append(fields.get("value"))
-
-    def handle_endtag(self, tag):
-        if tag == "form":
-            self.in_form = False
+class NoRedirects(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 def main():
-    base = "http://127.0.0.1:8080"
-    client = build_opener(HTTPCookieProcessor(CookieJar()))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=("create", "retained"))
+    parser.add_argument("--base-url", default="http://127.0.0.1:8080")
+    parser.add_argument("--database", default="/appdata/lake-pass-bot.db")
+    args = parser.parse_args()
+    base = args.base_url.rstrip("/")
+    client = build_opener(HTTPCookieProcessor(CookieJar()), NoRedirects())
 
-    def submit(path, fields):
-        with client.open(base + path, timeout=10) as response:
-            parser = FormParser(path)
-            parser.feed(response.read().decode())
-        assert len(parser.csrf) == 1 and parser.csrf[0]
-        payload = urlencode(dict(fields, csrf_token=parser.csrf[0])).encode()
-        request = Request(base + path, data=payload, headers={"Origin": base})
-        with client.open(request, timeout=10) as response:
-            assert response.url.startswith(base + "/"), "form left the local app"
-            assert response.url != base + path, "form submission was rejected"
-            return response.read()
+    def request(path, fields=None):
+        assert path.startswith("/") and not path.startswith("//") and "\\" not in path, "unexpected API navigation"
+        headers = {"Accept": "application/json", "X-Lake-Pass-Navigation": "manual"}
+        if fields is not None:
+            headers["Origin"] = base
+        payload = None if fields is None else urlencode(fields).encode()
+        with client.open(Request(base + "/api" + path, data=payload, headers=headers), timeout=10) as response:
+            assert response.status == 200, "API request was rejected"
+            assert response.headers.get("Content-Type", "").startswith("application/json"), "API did not return JSON"
+            assert response.headers.get("Cache-Control") == "no-store", "credential API was cacheable"
+            return json.load(response)
 
-    dashboard = submit("/login", {"username": "ci-admin", "password": os.environ["CI_ADMIN_PASSWORD"]})
-    assert b"Account settings for ci-admin" in dashboard
-    if sys.argv[1] == "create":
+    def page(path):
+        for _ in range(8):
+            result = request(path)
+            if "Redirect" not in result:
+                assert isinstance(result.get("Data"), dict), "API page data is missing"
+                return result["Data"]
+            path = result["Redirect"]
+        raise AssertionError("API returned too many redirects")
+
+    def submit(path, fields, destination):
+        token = page(path).get("CSRFToken")
+        assert isinstance(token, str) and token, "API CSRF token is missing"
+        result = request(path, dict(fields, csrf_token=token))
+        assert result.get("Redirect") == destination, "API mutation was not confirmed"
+        return page(destination)
+
+    dashboard = submit("/login", {"username": "ci-admin", "password": os.environ["CI_ADMIN_PASSWORD"]}, "/")
+    assert dashboard.get("Authenticated") is True and dashboard.get("Username") == "ci-admin", "API login identity differs"
+    if args.action == "create":
         submit("/sources/new", {
             "name": "Synthetic key relocation", "provider": "twilio",
             "twilio_account_sid": "AC" + "1" * 32,
             "twilio_auth_token": "synthetic-key-relocation-secret",
             "twilio_to_number": "+15550100123",
-        })
+        }, "/sources?ok=created")
     # Read-only synthetic DB inspection establishes there really is encrypted
     # state. No provider health/pairing/booking request is ever sent.
-    with sqlite3.connect("file:/appdata/lake-pass-bot.db?mode=ro", uri=True) as database:
+    with sqlite3.connect("file:" + args.database + "?mode=ro", uri=True) as database:
         rows = database.execute("SELECT id, config_ciphertext FROM otp_sources").fetchall()
     assert len(rows) == 1 and rows[0][1]
     assert "synthetic-key-relocation-secret" not in str(rows[0][1])
@@ -65,7 +72,7 @@ def main():
     # Supplying no credential prevents a replacement from masking a wrong key.
     submit(f"/sources/{source_id}", {
         "name": "Synthetic key relocation verified", "provider": "twilio",
-    })
+    }, "/sources?ok=updated")
     print("Encrypted source retained and updated without replacing its credential.")
 
 
