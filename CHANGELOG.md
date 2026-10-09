@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.7.3...lake-pass-bot-v0.8.0) (2026-10-09)
+
+
+### Features
+
+* migrate application UI to React ([#106](https://github.com/jaysqvl/lake-pass-bot/issues/106)) ([2492f93](https://github.com/jaysqvl/lake-pass-bot/commit/2492f9305d8762c7151b1c402d9e6c92879f346f))
+
 ## [0.7.3](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.7.2...lake-pass-bot-v0.7.3) (2026-10-05)
 
 
