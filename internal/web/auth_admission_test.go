@@ -82,12 +82,12 @@ func TestSetupFailureLimitsPersistAndCannotLockOutValidToken(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if f.server.admitInvalidSetupToken(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "http://example.test/setup", nil)) {
+	if f.server.admitInvalidSetupToken(httptest.NewRecorder(), apiRequest(http.MethodPost, "http://example.test/setup", nil)) {
 		t.Fatal("global setup budget ignored")
 	}
 	form.Set("setup_token", f.cfg.SetupToken)
 	w = serveForm(f, http.MethodPost, "/setup", []*http.Cookie{csrf}, form)
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/?ok=setup" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/api/?ok=setup" {
 		t.Fatalf("valid setup locked out: %d %s", w.Code, w.Body.String())
 	}
 }

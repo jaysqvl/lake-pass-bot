@@ -33,8 +33,8 @@ func TestPrivateHostCheckToggle(t *testing.T) {
 			{"*.example", false, false},
 		} {
 			t.Run(fmt.Sprintf("enabled=%t/host=%s", enabled, tc.host), func(t *testing.T) {
-				for _, path := range []string{"/login", "/static/app.css", "/healthz"} {
-					r := httptest.NewRequest(http.MethodGet, "http://example.test"+path, nil)
+				for _, path := range []string{"/login", "/healthz"} {
+					r := apiRequest(http.MethodGet, "http://example.test"+path, nil)
 					r.Host = tc.host
 					w := httptest.NewRecorder()
 					f.handler.ServeHTTP(w, r)
@@ -56,7 +56,7 @@ func TestPrivateHostCheckDisabledPreservesLoginOriginAndCSRF(t *testing.T) {
 	f.server.config.HostCheckEnabled = false
 	const base = "http://new-lake.example"
 	get := httptest.NewRecorder()
-	f.handler.ServeHTTP(get, httptest.NewRequest(http.MethodGet, base+"/login", nil))
+	f.handler.ServeHTTP(get, apiRequest(http.MethodGet, base+"/login", nil))
 	if get.Code != http.StatusOK || len(get.Result().Cookies()) != 1 {
 		t.Fatalf("login page = %d, cookies=%d", get.Code, len(get.Result().Cookies()))
 	}
@@ -76,14 +76,14 @@ func TestPrivateHostCheckDisabledPreservesLoginOriginAndCSRF(t *testing.T) {
 			{base, "wrong-token", "invalid CSRF token"},
 		} {
 			w := post(path, tc.origin, tc.csrf, cookies)
-			if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), tc.message) {
+			if w.Code != http.StatusForbidden || apiData[browserErrorPage](t, w.Body.String(), "error").ReturnURL != "/login" {
 				t.Fatalf("rejected %s = %d: %s", path, w.Code, w.Body.String())
 			}
 		}
 	}
 	assertRejected("/login", loginCSRF.Value, []*http.Cookie{loginCSRF})
 	w := post("/login", base, loginCSRF.Value, []*http.Cookie{loginCSRF})
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/api/" {
 		t.Fatalf("login = %d: %s", w.Code, w.Body.String())
 	}
 	cookies := w.Result().Cookies()
@@ -104,7 +104,7 @@ func TestPrivateHostCheckDisabledPreservesLoginOriginAndCSRF(t *testing.T) {
 	}
 	w = httptest.NewRecorder()
 	f.handler.ServeHTTP(w, authenticatedRequest(http.MethodGet, base+"/account", cookies, nil))
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/login" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/api/login" {
 		t.Fatalf("unauthenticated account = %d", w.Code)
 	}
 }
@@ -114,7 +114,7 @@ func TestPrivateHostCheckDisabledStillRequiresSetupToken(t *testing.T) {
 	f.server.config.HostCheckEnabled = false
 	const base = "http://new-lake.example"
 	w := httptest.NewRecorder()
-	f.handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, base+"/setup", nil))
+	f.handler.ServeHTTP(w, apiRequest(http.MethodGet, base+"/setup", nil))
 	if w.Code != http.StatusOK || len(w.Result().Cookies()) != 1 {
 		t.Fatalf("setup page = %d, cookies=%d", w.Code, len(w.Result().Cookies()))
 	}

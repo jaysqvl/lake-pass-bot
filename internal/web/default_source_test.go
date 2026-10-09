@@ -50,7 +50,7 @@ func TestDefaultOTPSourcePageSelectionIsOwnerScopedAndKeepsQueuedSource(t *testi
 		t.Fatalf("missing CSRF=%d", missingCSRF.Code)
 	}
 	response := serveForm(f, http.MethodPost, path, cookies, url.Values{"csrf_token": {csrfFrom(cookies)}, "user_id": {fmt.Sprint(member.ID)}})
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/sources?notice=otp-default-updated" {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/api/sources?notice=otp-default-updated" {
 		t.Fatalf("default save=%d %s", response.Code, response.Body.String())
 	}
 	selected, err := resources.GetDefaultOTPSource(ctx)
@@ -63,8 +63,21 @@ func TestDefaultOTPSourcePageSelectionIsOwnerScopedAndKeepsQueuedSource(t *testi
 	}
 	page := serveForm(f, http.MethodGet, "/sources", cookies, nil)
 	body := page.Body.String()
-	if page.Code != http.StatusOK || !strings.Contains(body, ">Default</span>") || !strings.Contains(body, ">Configured</span>") || !strings.Contains(body, fmt.Sprintf(`action="/sources/%d/default"`, original.ID)) || strings.Contains(body, fmt.Sprintf(`action="/sources/%d/default"`, alternate.ID)) || strings.Contains(body, foreign.Name) {
+	if page.Code != http.StatusOK || !hasPostAction(t, body, fmt.Sprintf("/sources/%d/default", original.ID)) || hasPostAction(t, body, fmt.Sprintf("/sources/%d/default", alternate.ID)) || strings.Contains(body, foreign.Name) {
 		t.Fatalf("default source page=%d %s", page.Code, body)
+	}
+	cards := apiCards(t, body)
+	selectedCards := 0
+	for _, card := range cards {
+		if card.Default {
+			selectedCards++
+			if card.Title != alternate.Name || card.Status != "Configured" {
+				t.Fatal("default source status lost")
+			}
+		}
+	}
+	if selectedCards != 1 {
+		t.Fatalf("default sources = %d", selectedCards)
 	}
 	denied := serveForm(f, http.MethodPost, fmt.Sprintf("/sources/%d/default", foreign.ID), cookies, url.Values{"csrf_token": {csrfFrom(cookies)}})
 	if denied.Code != http.StatusNotFound {

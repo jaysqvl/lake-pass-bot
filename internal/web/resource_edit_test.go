@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"fmt"
-	"html"
 	"net/http"
 	"net/url"
 	"strings"
@@ -70,7 +69,7 @@ func TestPendingResourceEditFormsFollowJobSnapshotsAndReleaseAfterCompletion(t *
 		}
 	}
 	cookies := loginCookies(t, f)
-	jobLink := fmt.Sprintf(`href="/jobs/%d"`, job.ID)
+	jobLink := fmt.Sprintf("/jobs/%d", job.ID)
 	targets := []struct {
 		path, submit, help string
 		form               url.Values
@@ -93,7 +92,7 @@ func TestPendingResourceEditFormsFollowJobSnapshotsAndReleaseAfterCompletion(t *
 					wantStatus = http.StatusUnprocessableEntity
 				}
 				body := response.Body.String()
-				if response.Code != wantStatus || !strings.Contains(body, target.help) || !strings.Contains(body, jobLink) || !strings.Contains(body, `type="submit" disabled>`+target.submit+`</button>`) {
+				if response.Code != wantStatus || !strings.Contains(body, target.help) || apiData[formData](t, body, "form").Flash == nil || apiData[formData](t, body, "form").Flash.ActionURL != jobLink || !apiData[formData](t, body, "form").SubmitDisabled || apiData[formData](t, body, "form").SubmitLabel != target.submit {
 					t.Fatalf("%s %s while %s=%d body=%s", method, target.path, status, response.Code, body)
 				}
 				if strings.Contains(body, "synthetic-secret") || strings.Contains(body, "5559876543") {
@@ -112,7 +111,7 @@ func TestPendingResourceEditFormsFollowJobSnapshotsAndReleaseAfterCompletion(t *
 	}
 	for _, path := range []string{fmt.Sprintf("/profiles/%d", other.ID), fmt.Sprintf("/sources/%d", original.ID), "/profiles/new", "/sources/new"} {
 		response := serveForm(f, http.MethodGet, path, cookies, nil)
-		if response.Code != http.StatusOK || strings.Contains(response.Body.String(), `type="submit" disabled`) || strings.Contains(response.Body.String(), jobLink) {
+		if response.Code != http.StatusOK || apiData[formData](t, response.Body.String(), "form").SubmitDisabled || strings.Contains(response.Body.String(), jobLink) {
 			t.Fatalf("unrelated or new resource incorrectly blocked %s=%d body=%s", path, response.Code, response.Body.String())
 		}
 	}
@@ -121,7 +120,7 @@ func TestPendingResourceEditFormsFollowJobSnapshotsAndReleaseAfterCompletion(t *
 	}
 	for _, target := range targets {
 		response := serveForm(f, http.MethodGet, target.path, cookies, nil)
-		if response.Code != http.StatusOK || strings.Contains(response.Body.String(), `type="submit" disabled`) || strings.Contains(response.Body.String(), jobLink) {
+		if response.Code != http.StatusOK || apiData[formData](t, response.Body.String(), "form").SubmitDisabled || strings.Contains(response.Body.String(), jobLink) {
 			t.Fatalf("completed job still blocks %s=%d body=%s", target.path, response.Code, response.Body.String())
 		}
 		response = serveForm(f, http.MethodPost, target.path, cookies, target.form)
@@ -148,13 +147,13 @@ func TestPendingResourceEditNoticesAreAccountScoped(t *testing.T) {
 	for _, path := range []string{fmt.Sprintf("/profiles/%d", own.ID), fmt.Sprintf("/sources/%d", own.OTPSourceID)} {
 		response := serveForm(f, http.MethodGet, path, cookies, nil)
 		body := response.Body.String()
-		if response.Code != http.StatusOK || strings.Contains(body, `type="submit" disabled`) || strings.Contains(body, fmt.Sprintf(`href="/jobs/%d"`, job.ID)) || strings.Contains(body, foreign.Name) {
+		if response.Code != http.StatusOK || apiData[formData](t, body, "form").SubmitDisabled || strings.Contains(body, fmt.Sprintf("/jobs/%d", job.ID)) || strings.Contains(body, foreign.Name) {
 			t.Fatalf("foreign job leaked into %s=%d body=%s", path, response.Code, body)
 		}
 	}
 	for _, path := range []string{fmt.Sprintf("/profiles/%d", foreign.ID), fmt.Sprintf("/sources/%d", foreign.OTPSourceID)} {
 		response := serveForm(f, http.MethodGet, path, cookies, nil)
-		if response.Code != http.StatusNotFound || strings.Contains(response.Body.String(), fmt.Sprintf(`href="/jobs/%d"`, job.ID)) {
+		if response.Code != http.StatusNotFound || strings.Contains(response.Body.String(), fmt.Sprintf("/jobs/%d", job.ID)) {
 			t.Fatalf("foreign busy resource %s=%d body=%s", path, response.Code, response.Body.String())
 		}
 	}
@@ -169,8 +168,8 @@ func TestYodelSignInPhonePlaceholderExplainsCreationAndRetention(t *testing.T) {
 		{fmt.Sprintf("/profiles/%d", profile.ID), "Leave blank to keep existing", "Leave blank to keep your saved mobile number."},
 	} {
 		response := serveForm(f, http.MethodGet, test.path, cookies, nil)
-		body := html.UnescapeString(response.Body.String())
-		if response.Code != http.StatusOK || !strings.Contains(body, `placeholder="`+test.placeholder+`"`) || !strings.Contains(body, test.help) || strings.Contains(body, "Required when selected") || strings.Contains(body, "5559876543") {
+		body := response.Body.String()
+		if response.Code != http.StatusOK || apiField(t, body, "yodel_phone").Placeholder != test.placeholder || !strings.Contains(apiField(t, body, "yodel_phone").Help, test.help) || strings.Contains(body, "Required when selected") || strings.Contains(body, "5559876543") {
 			t.Fatalf("phone guidance %s=%d body=%s", test.path, response.Code, body)
 		}
 	}

@@ -66,7 +66,7 @@ func TestLogoutDoesNotClaimSuccessWhenRevocationFails(t *testing.T) {
 	}
 	sessionTestSQL(t, f, `DROP TRIGGER reject_session_delete`)
 	w = serveForm(f, http.MethodPost, "/logout", cookies, form)
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/login" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/api/login" {
 		t.Fatalf("logout after recovery = %d", w.Code)
 	}
 	if _, err := f.store.GetSession(context.Background(), token); !errors.Is(err, store.ErrNotFound) {
@@ -85,7 +85,7 @@ func TestPublicModeRejectsRenamedPrivateSession(t *testing.T) {
 	r.AddCookie(&http.Cookie{Name: "__Host-" + csrfCookie, Value: credentials.CSRFToken})
 	w := httptest.NewRecorder()
 	f.handler.ServeHTTP(w, r)
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/login" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/api/login" {
 		t.Fatalf("renamed private session accepted: %d", w.Code)
 	}
 }
@@ -102,7 +102,7 @@ func publicLoginCookies(t *testing.T, f webFixture) []*http.Cookie {
 	r.AddCookie(csrf)
 	w := httptest.NewRecorder()
 	f.handler.ServeHTTP(w, r)
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/api/" {
 		t.Fatalf("public login=%d", w.Code)
 	}
 	return w.Result().Cookies()
@@ -140,7 +140,7 @@ func TestPublicSessionCannotMoveToAnotherOriginOrPrivateMode(t *testing.T) {
 				if w.Code != http.StatusOK {
 					t.Fatalf("same origin rejected: %d", w.Code)
 				}
-			} else if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/login" {
+			} else if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/api/login" {
 				t.Fatalf("cross-scope replay accepted: %d", w.Code)
 			}
 		})
@@ -163,7 +163,7 @@ func TestRevocationDuringFormParsingCannotReachHandler(t *testing.T) {
 			t.Fatal(err)
 		}
 	}}
-	r := httptest.NewRequest(http.MethodPost, "http://example.test/session-test", body)
+	r := apiRequest(http.MethodPost, "http://example.test/session-test", body)
 	r.Header.Set("Origin", "http://example.test")
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	for _, c := range cookies {
@@ -171,7 +171,7 @@ func TestRevocationDuringFormParsingCannotReachHandler(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	f.handler.ServeHTTP(w, r)
-	if reached || w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/login" {
+	if reached || w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/api/login" {
 		t.Fatalf("revoked during parsing: reached=%v status=%d", reached, w.Code)
 	}
 }
@@ -201,7 +201,7 @@ func TestSessionReadFailureDoesNotImplyLogout(t *testing.T) {
 	}
 	sessionTestSQL(t, f, `ALTER TABLE unavailable_sessions RENAME TO sessions`)
 	w := serveForm(f, http.MethodPost, "/logout", cookies, url.Values{"csrf_token": {csrfFrom(cookies)}})
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/login" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/api/login" {
 		t.Fatalf("retry logout=%d", w.Code)
 	}
 }

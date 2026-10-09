@@ -100,7 +100,7 @@ func (s *Server) networkSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		s.internal(w)
 		return
 	}
-	http.Redirect(w, r, "/settings/network?ok=updated", http.StatusSeeOther)
+	apiRedirect(w, r, "/settings/network?ok=updated", http.StatusSeeOther)
 }
 
 func (s *Server) renderNetworkSettingsPage(w http.ResponseWriter, r *http.Request, value model.NetworkSettings, problem string) {
@@ -113,5 +113,5 @@ func (s *Server) renderNetworkSettingsPage(w http.ResponseWriter, r *http.Reques
 	if r.Method == http.MethodPost {
 		data.AllowedHosts = r.Form.Get("allowed_hosts")
 	}
-	s.render(w, formStatus(problem), "network_settings", data)
+	s.respond(w, formStatus(problem), "network_settings", data)
 }

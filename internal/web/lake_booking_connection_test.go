@@ -34,17 +34,17 @@ func TestLakeBookingAccountChoiceAndPreferenceEdits(t *testing.T) {
 	first := createLakeBookingAccount(t, f, f.admin.ID, "First account", "buntzen", true)
 	cookies := loginCookies(t, f)
 	page := serveForm(f, http.MethodGet, "/lakes/buntzen", cookies, nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Used for bookings") || strings.Contains(page.Body.String(), "Use for bookings</button>") {
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Used for bookings") || hasPostAction(t, page.Body.String(), "/lakes/buntzen/connection") {
 		t.Fatalf("sole account should need no choice: %d %s", page.Code, page.Body.String())
 	}
 	second := createLakeBookingAccount(t, f, f.admin.ID, "Second account", "buntzen", true)
 	page = serveForm(f, http.MethodGet, "/lakes/buntzen", cookies, nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), model.ErrLakeConnectionAmbiguous.Error()) || strings.Count(page.Body.String(), "Use for bookings</button>") != 2 {
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), model.ErrLakeConnectionAmbiguous.Error()) || strings.Count(page.Body.String(), `"Label":"Use for bookings"`) != 2 {
 		t.Fatalf("multiple accounts should ask for a choice: %d %s", page.Code, page.Body.String())
 	}
 	selection := url.Values{"csrf_token": {csrfFrom(cookies)}, "booking_profile_id": {strconv.FormatInt(second.ID, 10)}}
 	response := serveForm(f, http.MethodPost, "/lakes/buntzen/connection", cookies, selection)
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/lakes/buntzen?ok=updated#connection" {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/api/lakes/buntzen?ok=updated#connection" {
 		t.Fatalf("choose account: %d %s", response.Code, response.Body.String())
 	}
 	saved, err := resources.GetLakeSettings(ctx, "buntzen")
@@ -118,10 +118,11 @@ func TestGlobalBookingConfirmationPreference(t *testing.T) {
 	f := newWebFixture(t)
 	cookies := loginCookies(t, f)
 	page := serveForm(f, http.MethodGet, "/settings", cookies, nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `name="default_confirmation_mode"`) || !strings.Contains(page.Body.String(), `value="manual" selected`) {
+	if page.Code != http.StatusOK || apiField(t, page.Body.String(), "default_confirmation_mode").Type != "select" {
 		t.Fatalf("manual confirmation default missing: %d %s", page.Code, page.Body.String())
 	}
 	settings := model.DefaultAccountSettings()
+	assertSettingsSelectChoice(t, page.Body.String(), "default_confirmation_mode", "manual")
 	settings.DefaultConfirmationMode = model.RunModeAuto
 	values := accountSettingsPageValues(settings)
 	values.Set("csrf_token", csrfFrom(cookies))

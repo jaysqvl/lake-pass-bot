@@ -27,12 +27,12 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !hasUsers {
-		http.Redirect(w, r, "/setup", http.StatusSeeOther)
+		apiRedirect(w, r, "/setup", http.StatusSeeOther)
 		return
 	}
 	if cookie, err := s.readSessionCookie(r); err == nil {
 		if _, err := s.store.GetSession(r.Context(), cookie.Value); err == nil {
-			http.Redirect(w, r, "/", http.StatusSeeOther)
+			apiRedirect(w, r, "/", http.StatusSeeOther)
 			return
 		} else if !errors.Is(err, store.ErrNotFound) {
 			s.sessionFailure(w, r, err)
@@ -50,7 +50,7 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 		message = "Password changed. Sign in again."
 	}
 	data := authPageData{BaseData: BaseData{Title: "Sign in", CSRFToken: token}, Error: loginError(r.URL.Query().Get("error")), Message: message}
-	s.render(w, http.StatusOK, "login", data)
+	s.respond(w, http.StatusOK, "login", data)
 }
 
 func loginError(value string) string {
@@ -90,7 +90,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	if !hasUsers {
 		s.clearCookie(w, loginCSRFCookie)
-		http.Redirect(w, r, "/setup", http.StatusSeeOther)
+		apiRedirect(w, r, "/setup", http.StatusSeeOther)
 		return
 	}
 	username := strings.TrimSpace(r.Form.Get("username"))
@@ -111,7 +111,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !allowedIP || !allowedUser {
-		http.Redirect(w, r, "/login?error=limited", http.StatusSeeOther)
+		apiRedirect(w, r, "/login?error=limited", http.StatusSeeOther)
 		return
 	}
 	_, credentials, ok, err := s.store.AuthenticateAndCreateSessionInScope(
@@ -133,13 +133,13 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		http.Redirect(w, r, "/login?error=invalid", http.StatusSeeOther)
+		apiRedirect(w, r, "/login?error=invalid", http.StatusSeeOther)
 		return
 	}
 	s.setCookie(w, sessionCookie, credentials.Token, sessionLifetime)
 	s.setCookie(w, csrfCookie, credentials.CSRFToken, sessionLifetime)
 	s.clearCookie(w, loginCSRFCookie)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	apiRedirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) setupPage(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +149,7 @@ func (s *Server) setupPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if hasUsers {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		apiRedirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
 	token, err := auth.NewToken()
@@ -158,7 +158,7 @@ func (s *Server) setupPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setCookie(w, loginCSRFCookie, token, 10*time.Minute)
-	s.render(w, http.StatusOK, "setup", authPageData{BaseData: BaseData{Title: "First-run setup", CSRFToken: token}, Username: "admin"})
+	s.respond(w, http.StatusOK, "setup", authPageData{BaseData: BaseData{Title: "First-run setup", CSRFToken: token}, Username: "admin"})
 }
 
 func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
@@ -187,7 +187,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 	}
 	if hasUsers {
 		s.clearCookie(w, loginCSRFCookie)
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		apiRedirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
 	if s.config.SetupToken == "" {
@@ -216,7 +216,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 		hasUsers, checkErr := s.store.HasUsers(r.Context())
 		if checkErr == nil && hasUsers {
 			s.clearCookie(w, loginCSRFCookie)
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			apiRedirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
 		s.renderSetupError(w, username, accountFormError(err))
@@ -236,7 +236,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 	s.setCookie(w, sessionCookie, credentials.Token, sessionLifetime)
 	s.setCookie(w, csrfCookie, credentials.CSRFToken, sessionLifetime)
 	s.clearCookie(w, loginCSRFCookie)
-	http.Redirect(w, r, "/?ok=setup", http.StatusSeeOther)
+	apiRedirect(w, r, "/?ok=setup", http.StatusSeeOther)
 }
 
 func tokenEqual(left, right string) bool {
@@ -250,7 +250,7 @@ func (s *Server) renderSetupError(w http.ResponseWriter, username, message strin
 		return
 	}
 	s.setCookie(w, loginCSRFCookie, token, 10*time.Minute)
-	s.render(w, http.StatusUnprocessableEntity, "setup", authPageData{BaseData: BaseData{Title: "First-run setup", CSRFToken: token}, Error: message, Username: username})
+	s.respond(w, http.StatusUnprocessableEntity, "setup", authPageData{BaseData: BaseData{Title: "First-run setup", CSRFToken: token}, Error: message, Username: username})
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -262,7 +262,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.clearAuthCookies(w)
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	apiRedirect(w, r, "/login", http.StatusSeeOther)
 }
 
 // Public cookies use browser-enforced host and path integrity. Unprefixed

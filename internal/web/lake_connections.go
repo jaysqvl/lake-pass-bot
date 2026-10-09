@@ -13,8 +13,10 @@ import (
 )
 
 type lakeConnection struct {
-	Lake                                destinations.Lake
-	Profiles                            []connectionProfile
+	Lake destinations.Lake
+	// Profiles are used to derive status and the lake's explicit resource cards.
+	// Their internal configuration is not part of the client response.
+	Profiles                            []connectionProfile `json:"-"`
 	SetupStarted, Configured, Connected bool
 	Status, StatusClass, Description    string
 	URL, ActionURL, ActionLabel         string

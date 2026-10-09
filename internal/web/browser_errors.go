@@ -3,7 +3,6 @@ package web
 import (
 	"mime"
 	"net/http"
-	"strconv"
 	"strings"
 )
 
@@ -55,9 +54,9 @@ func (w *browserErrorWriter) FlushError() error {
 
 func (w *browserErrorWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
-func (s *Server) browserErrorPages(next http.Handler) http.Handler {
+func (s *Server) apiErrors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !acceptsBrowserHTML(r) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -72,29 +71,8 @@ func (s *Server) browserErrorPages(next http.Handler) http.Handler {
 		w.Header().Del("Content-Encoding")
 		w.Header().Del("ETag")
 		w.Header().Del("Content-Range")
-		s.render(w, response.status, "error", browserErrorData(r, response.status))
+		s.respond(w, response.status, "error", browserErrorData(apiErrorRequest(r), response.status))
 	})
-}
-
-func acceptsBrowserHTML(r *http.Request) bool {
-	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "text/event-stream") {
-		return false
-	}
-	for _, part := range strings.Split(accept, ",") {
-		mediaType, parameters, err := mime.ParseMediaType(part)
-		if err != nil || mediaType != "text/html" {
-			continue
-		}
-		if q, exists := parameters["q"]; exists {
-			weight, err := strconv.ParseFloat(q, 64)
-			if err != nil || !(weight > 0 && weight <= 1) {
-				continue
-			}
-		}
-		return true
-	}
-	return false
 }
 
 type browserErrorPage struct {
@@ -155,4 +133,10 @@ func browserErrorReturn(path string) (string, string) {
 	default:
 		return "/", "Back to Setup"
 	}
+}
+
+func apiErrorRequest(r *http.Request) *http.Request {
+	clone := r.Clone(r.Context())
+	clone.URL.Path = strings.TrimPrefix(clone.URL.Path, "/api")
+	return clone
 }

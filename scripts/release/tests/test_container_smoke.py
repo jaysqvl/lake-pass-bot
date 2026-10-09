@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -17,7 +18,7 @@ from scripts import docker_http_smoke as HTTP_SMOKE
 
 SWAP_ENV = "LAKE_PASS_SMOKE_SWAP_LIMIT_SUPPORTED"
 SWAP_HEADER = "Filename\tType\tSize\tUsed\tPriority\n"
-BUILD_FOOTER = '<footer id="build-info" data-version="dev" data-revision="">Development build</footer>'
+BUILD = {"Version": "dev", "Revision": "", "Label": "Development build", "ShortRevision": "", "ReleaseURL": "", "CommitURL": ""}
 
 
 @contextmanager
@@ -97,27 +98,23 @@ class AuthenticatedLandingTests(unittest.TestCase):
         identity=True,
         cache="no-store",
         csp="default-src 'none'",
-        footer=BUILD_FOOTER,
+        build=BUILD,
     ):
         paths = []
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 paths.append(self.path)
-                redirect = self.path == "/" and root_status == 303
+                redirect = self.path == "/api/" and root_status == 303
                 self.send_response(303 if redirect else final_status)
                 if redirect:
-                    self.send_header("Location", destination)
+                    self.send_header("Location", "/api" + destination if destination.startswith("/") else destination)
                 else:
                     self.send_header("Cache-Control", cache)
                     self.send_header("Content-Security-Policy", csp)
                 self.end_headers()
-                if not redirect and identity:
-                    self.wfile.write(
-                        b'<a aria-label="Account settings for ci-admin">ci-admin</a>'
-                    )
                 if not redirect:
-                    self.wfile.write(footer.encode())
+                    self.wfile.write(json.dumps({"Page": "lakes", "Data": {"Authenticated": identity, "Username": "ci-admin"}, "Build": build}).encode())
 
             def log_message(self, *_args):
                 pass
@@ -131,7 +128,7 @@ class AuthenticatedLandingTests(unittest.TestCase):
         return None, paths
 
     def test_home_and_expected_lakes_redirect_keep_authenticated_checks(self):
-        for status, paths in ((200, ["/"]), (303, ["/", "/lakes"])):
+        for status, paths in ((200, ["/api/"]), (303, ["/api/", "/api/lakes"])):
             with self.subTest(status=status):
                 error, requested = self.run_landing(root_status=status)
                 self.assertIsNone(error)
@@ -142,7 +139,7 @@ class AuthenticatedLandingTests(unittest.TestCase):
             with self.subTest(destination=destination):
                 error, paths = self.run_landing(destination=destination)
                 self.assertIsNotNone(error)
-                self.assertEqual(paths, ["/"])
+                self.assertEqual(paths, ["/api/"])
 
     def test_final_page_must_be_authenticated_and_hardened(self):
         for options in (
@@ -150,12 +147,12 @@ class AuthenticatedLandingTests(unittest.TestCase):
             {"identity": False},
             {"cache": "public"},
             {"csp": ""},
-            {"footer": ""},
+            {"build": {}},
         ):
             with self.subTest(options=options):
                 error, paths = self.run_landing(**options)
                 self.assertIsNotNone(error)
-                self.assertEqual(paths, ["/", "/lakes"])
+                self.assertEqual(paths, ["/api/", "/api/lakes"])
 
 
 class AuthenticationSmokeTests(unittest.TestCase):
@@ -167,20 +164,17 @@ class AuthenticationSmokeTests(unittest.TestCase):
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
-                if self.path == "/setup" and configured:
+                if self.path == "/api/setup" and configured:
                     self.send_response(303)
-                    self.send_header("Location", "/login")
+                    self.send_header("Location", "/api/login")
                     self.end_headers()
                     return
-                if self.path in {"/setup", "/login"}:
+                if self.path in {"/api/setup", "/api/login"}:
                     self.send_response(200)
                     self.send_header("Set-Cookie", "preauth_csrf=form-token; Path=/")
+                    self.send_header("Content-Type", "application/json")
                     self.end_headers()
-                    page = (
-                        f'<form method="post" action="{self.path}">'
-                        '<input name="csrf_token" value="form-token"></form>'
-                        + BUILD_FOOTER
-                    )
+                    page = json.dumps({"Page": "setup" if self.path == "/api/setup" else "login", "Data": {"CSRFToken": "form-token"}, "Build": BUILD})
                     self.wfile.write(page.encode())
                     return
                 if "lake_pass_session=session-cookie" not in self.headers.get(
@@ -192,9 +186,7 @@ class AuthenticationSmokeTests(unittest.TestCase):
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Security-Policy", "default-src 'none'")
                 self.end_headers()
-                self.wfile.write(
-                    ("Account settings for ci-admin" + BUILD_FOOTER).encode()
-                )
+                self.wfile.write(json.dumps({"Page": "lakes", "Data": {"Authenticated": True, "Username": "ci-admin"}, "Build": BUILD}).encode())
 
             def do_POST(self):
                 nonlocal configured
@@ -206,13 +198,13 @@ class AuthenticationSmokeTests(unittest.TestCase):
                     "username": ["ci-admin"],
                     "password": ["synthetic-admin-password"],
                 }
-                if self.path == "/setup":
+                if self.path == "/api/setup":
                     expected.update(
                         setup_token=["synthetic-setup-token"],
                         password_confirm=["synthetic-admin-password"],
                     )
                 if (
-                    self.path not in {"/setup", "/login"}
+                    self.path not in {"/api/setup", "/api/login"}
                     or fields != expected
                     or "preauth_csrf=form-token" not in self.headers.get("Cookie", "")
                     or self.headers.get("Origin")
@@ -223,7 +215,7 @@ class AuthenticationSmokeTests(unittest.TestCase):
                 configured = True
                 submissions.append(self.path)
                 self.send_response(303)
-                self.send_header("Location", redirect if self.path == "/setup" else "/")
+                self.send_header("Location", "/api" + redirect if self.path == "/api/setup" and redirect.startswith("/") else redirect if self.path == "/api/setup" else "/api/")
                 self.send_header(
                     "Set-Cookie",
                     f"lake_pass_session=session-cookie; Path=/; {cookie_attributes}",
@@ -253,7 +245,7 @@ class AuthenticationSmokeTests(unittest.TestCase):
         return submissions
 
     def test_setup_login_and_reopened_session_use_real_csrf_cookies(self):
-        self.assertEqual(self.run_authentication(), ["/setup", "/login"])
+        self.assertEqual(self.run_authentication(), ["/api/setup", "/api/login"])
 
     def test_setup_requires_hardened_cookies_and_exact_redirect(self):
         for options in (
@@ -282,7 +274,7 @@ class NetworkSettingsSmokeTests(unittest.TestCase):
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
-                if self.path == "/fixture-session":
+                if self.path == "/api/fixture-session":
                     self.send_response(200)
                     self.send_header(
                         "Set-Cookie",
@@ -290,10 +282,10 @@ class NetworkSettingsSmokeTests(unittest.TestCase):
                     )
                     self.end_headers()
                     return
-                if self.path == "/login":
+                if self.path == "/api/login":
                     if self.headers.get("Cookie"):
                         self.send_response(303)
-                        self.send_header("Location", "/")
+                        self.send_header("Location", "/api/")
                         self.end_headers()
                         return
                     rejected = (
@@ -305,30 +297,22 @@ class NetworkSettingsSmokeTests(unittest.TestCase):
                     self.end_headers()
                     return
                 if (
-                    self.path != "/settings/network"
+                    self.path != "/api/settings/network"
                     or self.headers.get("Cookie") != "smoke_session=admin"
                 ):
                     self.send_error(401)
                     return
-                checked = " checked" if state["enabled"] else ""
-                disabled = " disabled" if locked else ""
-                page = (
-                    '<form action="/logout" method="post"><input name="csrf_token" value="logout-token"></form>'
-                    '<form action="/settings/network" method="post">'
-                    '<input name="csrf_token" value="network-token">'
-                    f'<input name="host_check_enabled" type="checkbox" role="switch"{checked}{disabled}>'
-                    f'<textarea name="allowed_hosts"{disabled}>{allowed_host}</textarea></form>'
-                )
                 self.send_response(200)
+                self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(page.encode())
+                self.wfile.write(json.dumps({"Page": "network_settings", "Data": {"CSRFToken": "network-token", "HostCheckEnabled": state["enabled"], "ManagedReason": "Operator override" if locked else "", "AllowedHosts": allowed_host}, "Build": BUILD}).encode())
 
             def do_POST(self):
                 form = parse_qs(
                     self.rfile.read(int(self.headers["Content-Length"])).decode()
                 )
                 if (
-                    self.path != "/settings/network"
+                    self.path != "/api/settings/network"
                     or self.headers.get("Cookie") != "smoke_session=admin"
                     or self.headers.get("Origin")
                     != f"http://127.0.0.1:{self.server.server_port}"
@@ -340,7 +324,7 @@ class NetworkSettingsSmokeTests(unittest.TestCase):
                 if apply_changes:
                     state["enabled"] = form.get("host_check_enabled") == ["on"]
                 self.send_response(save_status)
-                self.send_header("Location", "/settings/network?ok=updated")
+                self.send_header("Location", "/api/settings/network?ok=updated")
                 self.end_headers()
 
             def log_message(self, *_args):

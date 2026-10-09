@@ -18,7 +18,7 @@ import (
 
 func publicFormCookie(t *testing.T, fixture webFixture, target string) (*http.Cookie, string) {
 	t.Helper()
-	request := httptest.NewRequest(http.MethodGet, "http://example.test"+target, nil)
+	request := apiRequest(http.MethodGet, "http://example.test"+target, nil)
 	recorder := httptest.NewRecorder()
 	fixture.handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
@@ -44,18 +44,17 @@ func serveForm(fixture webFixture, method, target string, cookies []*http.Cookie
 func TestFirstRunSetupCreatesThePermanentAdministrator(t *testing.T) {
 	fixture := newUninitializedWebFixture(t)
 
-	request := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
+	request := apiRequest(http.MethodGet, "http://example.test/", nil)
 	recorder := httptest.NewRecorder()
 	fixture.handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/setup" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/setup" {
 		t.Fatalf("uninitialized root = %d location=%q", recorder.Code, recorder.Header().Get("Location"))
 	}
 
 	csrfCookie, body := publicFormCookie(t, fixture, "/setup")
-	for _, expected := range []string{"Create the administrator", `name="setup_token"`, `name="username"`, `name="password"`, `name="password_confirm"`} {
-		if !strings.Contains(body, expected) {
-			t.Fatalf("setup form missing %q", expected)
-		}
+	data := apiData[authPageData](t, body, "setup")
+	if data.CSRFToken != csrfCookie.Value || data.Authenticated {
+		t.Fatal("setup omitted its unauthenticated CSRF context")
 	}
 	password := "initial-owner-password"
 	form := url.Values{
@@ -66,7 +65,7 @@ func TestFirstRunSetupCreatesThePermanentAdministrator(t *testing.T) {
 		"password_confirm": {password},
 	}
 	recorder = serveForm(fixture, http.MethodPost, "/setup", []*http.Cookie{csrfCookie}, form)
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/?ok=setup" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/?ok=setup" {
 		t.Fatalf("POST setup = %d location=%q body=%s", recorder.Code, recorder.Header().Get("Location"), recorder.Body.String())
 	}
 	if strings.Contains(recorder.Body.String(), password) {
@@ -80,10 +79,10 @@ func TestFirstRunSetupCreatesThePermanentAdministrator(t *testing.T) {
 		t.Fatalf("unexpected initial user: %#v", users)
 	}
 
-	request = httptest.NewRequest(http.MethodGet, "http://example.test/setup", nil)
+	request = apiRequest(http.MethodGet, "http://example.test/setup", nil)
 	recorder = httptest.NewRecorder()
 	fixture.handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/login" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/login" {
 		t.Fatalf("repeat setup = %d location=%q", recorder.Code, recorder.Header().Get("Location"))
 	}
 }
@@ -111,7 +110,7 @@ func TestSetupRejectsCrossOriginAndDoesNotEchoPasswords(t *testing.T) {
 	request.Header.Set("Origin", "http://evil.example")
 	recorder = httptest.NewRecorder()
 	fixture.handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), "cross-origin") {
+	if recorder.Code != http.StatusForbidden || apiData[browserErrorPage](t, recorder.Body.String(), "error").ReturnURL != "/setup" {
 		t.Fatalf("cross-origin setup = %d: %s", recorder.Code, recorder.Body.String())
 	}
 }
@@ -134,7 +133,7 @@ func TestSetupRequiresHostTokenAndRejectsUntrustedHost(t *testing.T) {
 		t.Fatalf("wrong setup token created account: hasUsers=%v err=%v", hasUsers, err)
 	}
 
-	request := httptest.NewRequest(http.MethodGet, "http://attacker.example/setup", nil)
+	request := apiRequest(http.MethodGet, "http://attacker.example/setup", nil)
 	recorder = httptest.NewRecorder()
 	fixture.handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusBadRequest {
@@ -153,7 +152,7 @@ func TestAdminCreatesMemberAndMemberChangesTemporaryPassword(t *testing.T) {
 		"password_confirm": {temporaryPassword},
 	}
 	recorder := serveForm(fixture, http.MethodPost, "/admin/users/new", adminCookies, create)
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/admin/users?ok=user-created" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/admin/users?ok=user-created" {
 		t.Fatalf("create member = %d location=%q body=%s", recorder.Code, recorder.Header().Get("Location"), recorder.Body.String())
 	}
 	users, err := fixture.store.ListUsers(context.Background())
@@ -168,7 +167,7 @@ func TestAdminCreatesMemberAndMemberChangesTemporaryPassword(t *testing.T) {
 	request := authenticatedRequest(http.MethodGet, "http://example.test/", memberCookies, nil)
 	recorder = httptest.NewRecorder()
 	fixture.handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/account?password=required" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/account?password=required" {
 		t.Fatalf("temporary-password redirect = %d location=%q", recorder.Code, recorder.Header().Get("Location"))
 	}
 	unchanged := url.Values{
@@ -190,7 +189,7 @@ func TestAdminCreatesMemberAndMemberChangesTemporaryPassword(t *testing.T) {
 		"password_confirm": {newPassword},
 	}
 	recorder = serveForm(fixture, http.MethodPost, "/account/password", memberCookies, change)
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/login?ok=password-changed" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/login?ok=password-changed" {
 		t.Fatalf("change member password = %d location=%q body=%s", recorder.Code, recorder.Header().Get("Location"), recorder.Body.String())
 	}
 	if strings.Contains(recorder.Body.String(), temporaryPassword) || strings.Contains(recorder.Body.String(), newPassword) {
@@ -220,15 +219,14 @@ func TestAccountChangesSharePasswordAdmissionAndRateLimit(t *testing.T) {
 		t.Helper()
 		recorder := serveForm(fixture, http.MethodPost, path, cookies, form)
 		body := recorder.Body.String()
-		if recorder.Code != http.StatusTooManyRequests || !strings.Contains(recorder.Header().Get("Content-Type"), "text/html") || !strings.Contains(body, message) {
+		if recorder.Code != http.StatusTooManyRequests || !strings.Contains(recorder.Header().Get("Content-Type"), "application/json") || !strings.Contains(body, message) {
 			t.Fatalf("limited %s = %d: %s", path, recorder.Code, body)
 		}
-		for _, action := range []string{`action="/account/password"`, `action="/account/username"`} {
-			if !strings.Contains(body, action) {
-				t.Fatalf("limited account page lacks %s", action)
-			}
+		data := apiData[accountPageData](t, body, "account")
+		if data.PasswordRequired || data.CSRFToken != csrfFrom(cookies) {
+			t.Fatal("limited account response lost its account context")
 		}
-		if path == "/account/username" && !strings.Contains(body, `value="new-admin-name"`) {
+		if path == "/account/username" && data.FormUsername != "new-admin-name" {
 			t.Fatal("limited username form lost the submitted username")
 		}
 		for _, field := range []string{"current_password", "new_password", "password_confirm"} {
@@ -286,7 +284,7 @@ func TestThrottledTemporaryPasswordChangeKeepsRequiredAccountForm(t *testing.T) 
 		"new_password": {"new-member-password"}, "password_confirm": {"new-member-password"},
 	})
 	body := response.Body.String()
-	if response.Code != http.StatusTooManyRequests || !strings.Contains(body, "Set a new password before continuing") || !strings.Contains(body, `action="/account/password"`) || strings.Contains(body, `action="/account/username"`) {
+	if response.Code != http.StatusTooManyRequests || !apiData[accountPageData](t, body, "account").PasswordRequired {
 		t.Fatalf("limited required-password form = %d: %s", response.Code, body)
 	}
 	if strings.Contains(body, password) || strings.Contains(body, "new-member-password") {
@@ -328,7 +326,7 @@ func TestAdminCannotModifyPermanentAdminAndCanDisableMember(t *testing.T) {
 	request := authenticatedRequest(http.MethodGet, "http://example.test/account", memberCookies, nil)
 	recorder = httptest.NewRecorder()
 	fixture.handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/login" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/login" {
 		t.Fatalf("disabled member session = %d location=%q", recorder.Code, recorder.Header().Get("Location"))
 	}
 }
@@ -379,7 +377,7 @@ func TestAdminDeletesDisabledMemberAndReleasesBlueBubblesSlot(t *testing.T) {
 		t.Fatalf("inexact member deletion = %d: %s", recorder.Code, recorder.Body.String())
 	}
 	recorder = serveForm(fixture, http.MethodPost, deletePath, adminCookies, adminDelete)
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/admin/users?ok=user-deleted" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/admin/users?ok=user-deleted" {
 		t.Fatalf("delete member = %d location=%q body=%s", recorder.Code, recorder.Header().Get("Location"), recorder.Body.String())
 	}
 	if _, err := fixture.store.GetUser(context.Background(), member.ID); !errors.Is(err, store.ErrNotFound) {
@@ -419,13 +417,13 @@ func TestAdminCanResetMemberPasswordAndRevokeSessions(t *testing.T) {
 		"password_confirm": {newPassword},
 	}
 	recorder := serveForm(fixture, http.MethodPost, "/admin/users/"+stringID(member.ID)+"/password", adminCookies, reset)
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/admin/users?ok=user-password" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/admin/users?ok=user-password" {
 		t.Fatalf("reset member password = %d location=%q body=%s", recorder.Code, recorder.Header().Get("Location"), recorder.Body.String())
 	}
 	request := authenticatedRequest(http.MethodGet, "http://example.test/account", memberCookies, nil)
 	recorder = httptest.NewRecorder()
 	fixture.handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/login" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/login" {
 		t.Fatalf("reset member session = %d location=%q", recorder.Code, recorder.Header().Get("Location"))
 	}
 	user, authenticated, err := fixture.store.AuthenticateUser(context.Background(), member.Username, newPassword)
@@ -606,7 +604,7 @@ func TestLoginRateLimitHasIndependentHashedIPBucketAndBodyCap(t *testing.T) {
 			"password":   {"not-the-password"},
 		}
 		recorder := serveForm(fixture, http.MethodPost, "/login", []*http.Cookie{csrfCookie}, values)
-		if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/login?error=invalid" {
+		if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/login?error=invalid" {
 			t.Fatalf("failed login %d = %d location=%q", attempt, recorder.Code, recorder.Header().Get("Location"))
 		}
 	}
@@ -616,7 +614,7 @@ func TestLoginRateLimitHasIndependentHashedIPBucketAndBodyCap(t *testing.T) {
 		"password":   {"long-test-password"},
 	}
 	recorder := serveForm(fixture, http.MethodPost, "/login", []*http.Cookie{csrfCookie}, values)
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/login?error=limited" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/login?error=limited" {
 		t.Fatalf("IP-limited login = %d location=%q", recorder.Code, recorder.Header().Get("Location"))
 	}
 
@@ -626,7 +624,7 @@ func TestLoginRateLimitHasIndependentHashedIPBucketAndBodyCap(t *testing.T) {
 	}
 
 	oversized := "csrf_token=" + url.QueryEscape(csrfCookie.Value) + "&username=" + strings.Repeat("a", maxFormBody)
-	request := httptest.NewRequest(http.MethodPost, "http://example.test/login", strings.NewReader(oversized))
+	request := apiRequest(http.MethodPost, "http://example.test/login", strings.NewReader(oversized))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Origin", "http://example.test")
 	request.AddCookie(csrfCookie)

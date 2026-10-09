@@ -12,3 +12,8 @@ appdata
 artifacts
 playwright-profile
 chrome-profile
+**/node_modules
+web/frontend/test-results
+web/frontend/playwright-report
+web/frontend/*.tsbuildinfo
+internal/web/dist

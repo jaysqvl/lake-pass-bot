@@ -52,15 +52,15 @@ func TestSourcesPairFromTheLinkedProfileWithoutABooking(t *testing.T) {
 			}
 			pairURL := fmt.Sprintf("/sources/%d/pair", source.ID)
 			if test.wantDetail == "" {
-				if !strings.Contains(body, `action="`+pairURL+`"`) {
+				if !hasPostAction(t, body, pairURL) {
 					t.Fatal("ready source does not offer pairing")
 				}
 			} else {
-				if strings.Contains(body, `action="`+pairURL+`"`) {
+				if hasPostAction(t, body, pairURL) {
 					t.Fatal("incomplete source offers a pairing action that cannot succeed")
 				}
 				wantURL := "/lakes/buntzen#connection"
-				if !strings.Contains(body, `href="`+wantURL+`"`) {
+				if !hasCardLink(t, body, wantURL) {
 					t.Fatalf("sources lacks corrective profile link %q", wantURL)
 				}
 			}
@@ -70,7 +70,7 @@ func TestSourcesPairFromTheLinkedProfileWithoutABooking(t *testing.T) {
 				t.Fatal(err)
 			}
 			if test.wantDetail != "" {
-				if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/sources?notice=pairing-unavailable" || len(jobs) != 0 {
+				if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/sources?notice=pairing-unavailable" || len(jobs) != 0 {
 					t.Fatalf("pair POST prerequisite = %d location=%q jobs=%+v", recorder.Code, recorder.Header().Get("Location"), jobs)
 				}
 				// Browsers keep the fragment locally; it is not part of the next HTTP request.
@@ -79,7 +79,7 @@ func TestSourcesPairFromTheLinkedProfileWithoutABooking(t *testing.T) {
 					t.Fatalf("pairing prerequisite notice = %d body=%s", page.Code, page.Body.String())
 				}
 			} else {
-				if recorder.Code != http.StatusSeeOther || !strings.HasPrefix(recorder.Header().Get("Location"), "/jobs/") {
+				if recorder.Code != http.StatusSeeOther || !strings.HasPrefix(recorder.Header().Get("Location"), "/api/jobs/") {
 					t.Fatalf("ready pair POST = %d body=%s", recorder.Code, recorder.Body.String())
 				}
 				if len(jobs) != 1 || jobs[0].BookingRequestID != nil || jobs[0].ProfileID != profile.ID || jobs[0].Command != model.CommandAuthCheck {
@@ -124,11 +124,11 @@ func TestSourceConnectionActionsReturnToSourcesWithoutProviderErrors(t *testing.
 			if !healthy {
 				wantLocation, wantMessage = "/sources?notice=provider-unavailable", "connection test failed"
 			}
-			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != wantLocation || calls.Load() != 1 {
+			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/api"+wantLocation || calls.Load() != 1 {
 				t.Fatalf("connection action = %d location=%q calls=%d", response.Code, response.Header().Get("Location"), calls.Load())
 			}
 			page := serveForm(fixture, http.MethodGet, strings.SplitN(wantLocation, "#", 2)[0], cookies, nil)
-			if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), wantMessage) || !strings.Contains(page.Body.String(), `href="/sources" aria-current="page"`) {
+			if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), wantMessage) || apiData[listData](t, page.Body.String(), "list").CurrentPath != "/sources" {
 				t.Fatalf("connection result page = %d body=%s", page.Code, page.Body.String())
 			}
 			for _, secret := range []string{password, privateError} {
@@ -174,7 +174,7 @@ func TestPairingQueueFailuresReturnToSourcesWithoutCreatingAnotherJob(t *testing
 			}
 			cookies := loginCookies(t, fixture)
 			response := serveForm(fixture, http.MethodPost, fmt.Sprintf("/sources/%d/pair", source.ID), cookies, url.Values{"csrf_token": {csrfFrom(cookies)}})
-			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/sources?notice="+notice {
+			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/api/sources?notice="+notice {
 				t.Fatalf("pairing queue refusal = %d location=%q", response.Code, response.Header().Get("Location"))
 			}
 			jobs, err := resources.ListJobs(ctx, 20)
@@ -245,11 +245,11 @@ func TestAmbiguousSourcePairingSelectsAnOwnedSignInWithoutChangingTheDefault(t *
 	page := serveForm(f, http.MethodGet, "/sources", cookies, nil)
 	body := page.Body.String()
 	pairURL := fmt.Sprintf("/sources/%d/pair", secondary.ID)
-	if page.Code != http.StatusOK || !strings.Contains(body, `action="`+pairURL+`"`) || !strings.Contains(body, `name="profile_id"`) || !strings.Contains(body, "Your default OTP source stays unchanged") {
+	if page.Code != http.StatusOK || !hasPostAction(t, body, pairURL) || !strings.Contains(body, `"SelectName":"profile_id"`) || !strings.Contains(body, "Your default OTP source stays unchanged") {
 		t.Fatalf("ambiguous secondary source lacks an explicit pairing choice: %d %s", page.Code, body)
 	}
 	for _, profile := range profiles[:2] {
-		if !strings.Contains(body, fmt.Sprintf(`value="%d"`, profile.ID)) || !strings.Contains(body, profile.Name) {
+		if !strings.Contains(body, fmt.Sprintf(`"Value":"%d"`, profile.ID)) || !strings.Contains(body, profile.Name) {
 			t.Fatalf("pairing choices omit owned enabled identity %s", profile.Name)
 		}
 	}
@@ -261,7 +261,7 @@ func TestAmbiguousSourcePairingSelectsAnOwnedSignInWithoutChangingTheDefault(t *
 	csrf := csrfFrom(cookies)
 	for _, selected := range []string{"", "not-an-id", "0", "-1", fmt.Sprint(profiles[2].ID), fmt.Sprint(profiles[3].ID)} {
 		response := serveForm(f, http.MethodPost, pairURL, cookies, url.Values{"csrf_token": {csrf}, "profile_id": {selected}})
-		if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/sources?notice=pairing-unavailable" {
+		if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/api/sources?notice=pairing-unavailable" {
 			t.Fatalf("invalid pairing selection %q = %d %s", selected, response.Code, response.Body.String())
 		}
 	}
@@ -280,7 +280,7 @@ func TestAmbiguousSourcePairingSelectsAnOwnedSignInWithoutChangingTheDefault(t *
 		t.Fatalf("rejected pairing changed the queue: %+v %v", jobs, err)
 	}
 	response = serveForm(f, http.MethodPost, pairURL, cookies, url.Values{"csrf_token": {csrf}, "profile_id": {fmt.Sprint(profiles[1].ID)}, "user_id": {fmt.Sprint(member.ID)}, "source_id": {fmt.Sprint(defaultSource.ID)}})
-	if response.Code != http.StatusSeeOther || !strings.HasPrefix(response.Header().Get("Location"), "/jobs/") {
+	if response.Code != http.StatusSeeOther || !strings.HasPrefix(response.Header().Get("Location"), "/api/jobs/") {
 		t.Fatalf("owned explicit pairing = %d %s", response.Code, response.Body.String())
 	}
 	jobs, err = resources.ListJobs(ctx, 10)

@@ -35,7 +35,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		configured = configured || connection.Configured
 	}
 	if !configured {
-		http.Redirect(w, r, "/lakes", http.StatusSeeOther)
+		apiRedirect(w, r, "/lakes", http.StatusSeeOther)
 		return
 	}
 	userStore := s.userStore(r)
@@ -61,7 +61,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	if len(data.Bookings) > 3 {
 		data.Bookings = data.Bookings[:3]
 	}
-	s.render(w, http.StatusOK, "dashboard", data)
+	s.respond(w, http.StatusOK, "dashboard", data)
 }
 
 // A visit appears only after it has a pending or successful booking job. Older

@@ -14,17 +14,18 @@ The complete router is in `internal/web/server.go`. GET routes also accept HEAD.
 | Surface | Access and protections |
 | --- | --- |
 | `/healthz` | Anonymous database-availability check; no cookies or application records. Public mode has a limited Host/HTTP health exception. |
-| `/static/…` | Anonymous embedded assets; no filesystem or appdata serving. Public UI transport rules apply. |
-| GET/POST `/login` | Anonymous sign-in, public-form CSRF and browser-origin checks, Argon2id password verification, persistent username/visitor failure limits and bounded expensive work. |
-| GET/POST `/setup` | One-time administrator setup requiring a host-generated token, CSRF and browser-origin checks. Public mode refuses an uninitialized database; initialized setup redirects to sign-in. |
-| `/account`, `/account/password`, `/account/username`; POST `/logout` | Authenticated self-service. Account changes verify the current password. Mutations require session-bound CSRF and browser-origin checks. |
-| `/admin/users`, `/admin/users/new`, `/admin/users/{id}`, and password/delete actions | Active administrator only, plus authentication and mutation checks. The permanent administrator has additional deletion/role protections. |
-| GET/POST `/settings/network` | Active administrator only. Updates require CSRF and browser-origin checks, validate the host list, and keep the current Host reachable when enabling enforcement. Public HTTPS and explicit deployment overrides lock these controls. |
-| `/`; `/sources` with new/edit/health/pair actions; `/profiles` with new/edit actions; `/bookings` with new/edit/run actions | Authenticated owner. Resource lookups and linked IDs are scoped to the account in storage; mutations require CSRF and browser-origin checks. |
-| `/jobs`, `/jobs/{id}`, `/jobs/{id}/events`, POST `/jobs/{id}/decision` | Authenticated owner. Streams recheck session validity; decisions also require CSRF and browser-origin checks. |
+| UI routes, `/assets/…`, `/favicon.svg` | Anonymous embedded React shell and assets; no account data, filesystem or appdata serving. Public UI transport rules apply. |
+| GET/POST `/api/login` | Anonymous sign-in, public-form CSRF and browser-origin checks, Argon2id password verification, persistent username/visitor failure limits and bounded expensive work. |
+| GET/POST `/api/setup` | One-time administrator setup requiring a host-generated token, CSRF and browser-origin checks. Public mode refuses an uninitialized database; initialized setup redirects to sign-in. |
+| `/api/account`, `/api/account/password`, `/api/account/username`; POST `/api/logout` | Authenticated self-service. Account changes verify the current password. Mutations require session-bound CSRF and browser-origin checks. |
+| `/api/admin/users`, `/api/admin/users/new`, `/api/admin/users/{id}`, and password/delete actions | Active administrator only, plus authentication and mutation checks. The permanent administrator has additional deletion/role protections. |
+| GET/POST `/api/settings/network` | Active administrator only. Updates require CSRF and browser-origin checks, validate the host list, and keep the current Host reachable when enabling enforcement. Public HTTPS and explicit deployment overrides lock these controls. |
+| `/api/`; `/api/lakes` and lake settings; `/api/sources` with new/edit/health/pair actions; `/api/profiles` with new/edit actions; `/api/bookings` and `/api/bookings/new` | Authenticated owner. Resource lookups and linked IDs are scoped to the account in storage; mutations require CSRF and browser-origin checks. |
+| `/api/jobs`, `/api/jobs/{id}`, `/api/jobs/{id}/events`, POST `/api/jobs/{id}/decision` | Authenticated owner. Streams recheck session validity; decisions also require CSRF and browser-origin checks. |
 
 No public registration, password-recovery link, webhook, file upload, diagnostic
-archive download, or separate public JSON API is registered. Administrator status
+archive download, or unauthenticated data API is registered. The same-origin JSON
+API supplies the React UI and retains the server's account guards. Administrator status
 does not bypass ownership of another account's sources, profiles, bookings or jobs.
 
 Private HTTP hostname enforcement is off by default and can be enabled by an
@@ -46,9 +47,10 @@ a stolen valid password or live session remains a material risk.
 
 Every mutation requires CSRF plus the exact browser origin, with an absent-Origin
 compatibility path requiring `Sec-Fetch-Site: same-origin`. Browser headers alone
-are not authentication. Go templates escape HTML; dynamic browser text uses text
-nodes. CSP, framing denial, nosniff and no-store protect application responses;
-embedded static assets are deliberately cacheable. Public mode adds HSTS.
+are not authentication. React escapes displayed text; application code does not
+insert raw HTML. CSP, framing denial and nosniff protect browser responses. HTML
+and API data use no-store; hashed static assets are deliberately immutable and
+cacheable. Public mode adds HSTS.
 
 ## Required application properties
 
@@ -107,7 +109,8 @@ query-string credential. Protect that network and provider/proxy logs.
 
 ## Build, release and verification
 
-Docker inputs and Actions use immutable digests/commits. Go checksums, locked
+Docker inputs and Actions use immutable digests/commits. The frontend uses a
+committed npm lockfile, npm ci and dependency auditing. Go checksums, locked
 Python wheel hashes and the pinned build backend are verified. CI tests altered
 backend-hash rejection and audits both runtime and build dependencies. Image
 scanning has no vulnerability exceptions and rejects HIGH/CRITICAL results,

@@ -192,7 +192,7 @@ Manual recovery also accepts historical component tags and passes both old and
 new Docker build argument names. New releases use only the new prefix.
 
 Keep `main` protected with reviewed pull requests and passing `go`,
-`python-actions`, `integration`, and `docker` checks. Release Please still needs
+`frontend`, `python-actions`, `integration`, and `docker` checks. Release Please still needs
 permission to create release pull requests and publish releases. None of these
 build/release permissions requires a runner or credentials on your LAN.
 

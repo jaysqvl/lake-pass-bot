@@ -100,7 +100,7 @@ func loginCookies(t *testing.T, fixture webFixture) []*http.Cookie {
 
 func loginCookiesAs(t *testing.T, fixture webFixture, username, password string) []*http.Cookie {
 	t.Helper()
-	get := httptest.NewRequest(http.MethodGet, "http://example.test/login", nil)
+	get := apiRequest(http.MethodGet, "http://example.test/login", nil)
 	getRecorder := httptest.NewRecorder()
 	fixture.handler.ServeHTTP(getRecorder, get)
 	if getRecorder.Code != http.StatusOK {
@@ -116,7 +116,7 @@ func loginCookiesAs(t *testing.T, fixture webFixture, username, password string)
 		t.Fatal("login CSRF cookie missing")
 	}
 	form := url.Values{"csrf_token": {loginCSRF.Value}, "username": {username}, "password": {password}}
-	post := httptest.NewRequest(http.MethodPost, "http://example.test/login", strings.NewReader(form.Encode()))
+	post := apiRequest(http.MethodPost, "http://example.test/login", strings.NewReader(form.Encode()))
 	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	post.Header.Set("Origin", "http://example.test")
 	post.AddCookie(loginCSRF)
@@ -147,7 +147,7 @@ func authenticatedRequest(method, target string, cookies []*http.Cookie, form ur
 	} else {
 		body = strings.NewReader(form.Encode())
 	}
-	request := httptest.NewRequest(method, target, body)
+	request := apiRequest(method, target, body)
 	for _, cookie := range cookies {
 		request.AddCookie(cookie)
 	}
@@ -172,7 +172,7 @@ func TestLoginCookiesCSRFOriginAndNoStore(t *testing.T) {
 	request := authenticatedRequest(http.MethodGet, "http://example.test/", cookies, nil)
 	recorder := httptest.NewRecorder()
 	fixture.handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/lakes" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/lakes" {
 		t.Fatalf("unconfigured dashboard = %d", recorder.Code)
 	}
 	if recorder.Header().Get("Cache-Control") != "no-store" {
@@ -185,15 +185,12 @@ func TestLoginCookiesCSRFOriginAndNoStore(t *testing.T) {
 		t.Fatalf("referrer policy = %q", recorder.Header().Get("Referrer-Policy"))
 	}
 
-	loginRequest := httptest.NewRequest(http.MethodGet, "http://example.test/login", nil)
+	loginRequest := apiRequest(http.MethodGet, "http://example.test/login", nil)
 	loginRecorder := httptest.NewRecorder()
 	fixture.handler.ServeHTTP(loginRecorder, loginRequest)
-	loginHTML := loginRecorder.Body.String()
-	if !strings.Contains(loginHTML, `<meta name="referrer" content="same-origin">`) {
-		t.Fatal("same-origin referrer meta missing")
-	}
-	if !strings.Contains(loginHTML, `"includeIndicatorStyles":false`) {
-		t.Fatal("HTMX inline indicator styles are not disabled")
+	login := apiData[authPageData](t, loginRecorder.Body.String(), "login")
+	if login.CSRFToken == "" || login.Authenticated {
+		t.Fatal("login API context is invalid")
 	}
 
 	form := url.Values{"csrf_token": {csrfFrom(cookies)}}
@@ -217,7 +214,7 @@ func TestSlowInvalidBodyDoesNotHoldPublicAuthMutex(t *testing.T) {
 		t.Helper()
 		started := make(chan struct{}, 1)
 		release := make(chan struct{})
-		slow := httptest.NewRequest(http.MethodPost, "http://example.test"+target,
+		slow := apiRequest(http.MethodPost, "http://example.test"+target,
 			&blockingFormReader{started: started, release: release})
 		slow.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		slow.Header.Set("Origin", "http://example.test")
@@ -251,7 +248,7 @@ func TestSlowInvalidBodyDoesNotHoldPublicAuthMutex(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatal("slow request did not finish after its body was released")
 		}
-		if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != wantLocation {
+		if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api"+wantLocation {
 			t.Fatalf("valid %s request = %d location=%q body=%s", target, recorder.Code, recorder.Header().Get("Location"), recorder.Body.String())
 		}
 	}
@@ -284,29 +281,29 @@ func TestOriginAllowedForConfiguredProxyOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	request := httptest.NewRequest(http.MethodPost, "http://container.internal/login", strings.NewReader("csrf_token=x"))
-	request.Header.Set("Origin", "http://lake-pass.example")
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	recorder := httptest.NewRecorder()
-	server.Handler().ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), "invalid CSRF token") {
-		t.Fatalf("configured proxy origin = %d: %s", recorder.Code, recorder.Body.String())
-	}
-
-	request = httptest.NewRequest(http.MethodPost, "http://container.internal/login", strings.NewReader("csrf_token=x"))
-	request.Header.Set("Origin", "http://untrusted.example:9080")
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	recorder = httptest.NewRecorder()
-	server.Handler().ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), "cross-origin request rejected") {
-		t.Fatalf("untrusted proxy origin = %d: %s", recorder.Code, recorder.Body.String())
+	cookie, _ := publicFormCookie(t, fixture, "/login")
+	for _, tc := range []struct {
+		origin, token string
+		status        int
+	}{
+		{"http://lake-pass.example", cookie.Value, http.StatusSeeOther},
+		{"http://lake-pass.example", "wrong-csrf", http.StatusForbidden},
+		{"http://untrusted.example:9080", cookie.Value, http.StatusForbidden},
+	} {
+		form := url.Values{"csrf_token": {tc.token}, "username": {"admin"}, "password": {"long-test-password"}}
+		request := authenticatedRequest(http.MethodPost, "http://container.internal/login", []*http.Cookie{cookie}, form)
+		request.Header.Set("Origin", tc.origin)
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, request)
+		if recorder.Code != tc.status {
+			t.Fatalf("proxy login origin=%s status=%d; want %d", tc.origin, recorder.Code, tc.status)
+		}
 	}
 }
 
 func TestRootRouteDoesNotCatchBrowserAssetRequests(t *testing.T) {
 	fixture := newWebFixture(t)
-	request := httptest.NewRequest(http.MethodGet, "http://example.test/favicon.ico", nil)
+	request := apiRequest(http.MethodGet, "http://example.test/favicon.ico", nil)
 	recorder := httptest.NewRecorder()
 	fixture.handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusNotFound {
@@ -324,39 +321,34 @@ func TestRootRouteDoesNotCatchBrowserAssetRequests(t *testing.T) {
 
 func TestOriginAllowedForMissingOriginWithSameOriginFetchMetadata(t *testing.T) {
 	fixture := newWebFixture(t)
-	request := httptest.NewRequest(http.MethodPost, "http://example.test/login", strings.NewReader("csrf_token=x"))
-	request.Header.Set("Sec-Fetch-Site", "same-origin")
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	recorder := httptest.NewRecorder()
-	fixture.handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), "invalid CSRF token") {
-		t.Fatalf("same-origin fetch metadata = %d: %s", recorder.Code, recorder.Body.String())
-	}
-
-	for _, fetchSite := range []string{"", "same-site", "cross-site", "none"} {
-		request = httptest.NewRequest(http.MethodPost, "http://example.test/login", strings.NewReader("csrf_token=x"))
+	cookie, _ := publicFormCookie(t, fixture, "/login")
+	for _, fetchSite := range []string{"same-origin", "", "same-site", "cross-site", "none"} {
+		form := url.Values{"csrf_token": {cookie.Value}, "username": {"admin"}, "password": {"long-test-password"}}
+		request := authenticatedRequest(http.MethodPost, "http://example.test/login", []*http.Cookie{cookie}, form)
 		request.Header.Set("Sec-Fetch-Site", fetchSite)
-		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		recorder = httptest.NewRecorder()
+		recorder := httptest.NewRecorder()
 		fixture.handler.ServeHTTP(recorder, request)
-		if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), "cross-origin request rejected") {
-			t.Fatalf("fetch site %q = %d: %s", fetchSite, recorder.Code, recorder.Body.String())
+		want := http.StatusForbidden
+		if fetchSite == "same-origin" {
+			want = http.StatusSeeOther
+		}
+		if recorder.Code != want {
+			t.Fatalf("missing Origin, fetch site=%q status=%d; want %d", fetchSite, recorder.Code, want)
 		}
 	}
-
-	request = httptest.NewRequest(http.MethodPost, "http://example.test/login", strings.NewReader("csrf_token=x"))
+	form := url.Values{"csrf_token": {cookie.Value}, "username": {"admin"}, "password": {"long-test-password"}}
+	request := authenticatedRequest(http.MethodPost, "http://example.test/login", []*http.Cookie{cookie}, form)
 	request.Header.Set("Origin", "null")
 	request.Header.Set("Sec-Fetch-Site", "same-origin")
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	recorder = httptest.NewRecorder()
+	recorder := httptest.NewRecorder()
 	fixture.handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), "cross-origin request rejected") {
-		t.Fatalf("opaque origin = %d: %s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("opaque Origin bypassed origin checks: %d", recorder.Code)
 	}
 }
 
 func TestSameOriginCanonicalizesCaseAndDefaultPort(t *testing.T) {
-	request := httptest.NewRequest(http.MethodPost, "http://EXAMPLE.test/login", nil)
+	request := apiRequest(http.MethodPost, "http://EXAMPLE.test/login", nil)
 	request.Host = "example.test"
 	request.Header.Set("Origin", "HTTP://example.TEST:80")
 	if !sameOrigin(request) {
@@ -392,7 +384,7 @@ func TestEncryptedSecretsAreNeverRendered(t *testing.T) {
 			}
 		}
 		if strings.Contains(target, "/profiles/") {
-			if !strings.Contains(body, `name="yodel_phone"`) || strings.Contains(body, `name="yodel_email"`) || strings.Contains(body, `name="yodel_password"`) {
+			if apiField(t, body, "yodel_phone").Value != "" || apiFields(t, body)["yodel_email"].Name != "" || apiFields(t, body)["yodel_password"].Name != "" {
 				t.Fatalf("profile form did not expose only the write-only mobile field")
 			}
 		}
@@ -411,10 +403,10 @@ func TestNewBookingFormUsesLakeDefaultsWithoutSetupOverrides(t *testing.T) {
 	}
 	body := recorder.Body.String()
 	for _, unexpected := range []string{
-		`name="timezone"`, `name="release_time"`, `name="all_day_pass_url"`,
-		`name="half_day_pass_url"`, `name="confirmation_mode"`, `name="profile_id"`, `name="vehicle_keyword"`,
+		"timezone", "release_time", "all_day_pass_url",
+		"half_day_pass_url", "confirmation_mode", "profile_id", "vehicle_keyword",
 	} {
-		if strings.Contains(body, unexpected) {
+		if apiFields(t, body)[unexpected].Name != "" {
 			t.Fatalf("new booking form exposed a setup override %q", unexpected)
 		}
 	}
@@ -447,12 +439,12 @@ func TestPairingExplainsTheMissingProfilePrerequisite(t *testing.T) {
 	}
 	cookies := loginCookies(t, fixture)
 	page := serveForm(fixture, http.MethodGet, "/sources", cookies, nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `href="/lakes/buntzen#connection"`) || strings.Contains(page.Body.String(), fmt.Sprintf(`action="/sources/%d/pair"`, source.ID)) {
+	if page.Code != http.StatusOK || !hasCardLink(t, page.Body.String(), "/lakes/buntzen#connection") || hasPostAction(t, page.Body.String(), fmt.Sprintf("/sources/%d/pair", source.ID)) {
 		t.Fatalf("unassigned source guidance = %d body=%q", page.Code, page.Body.String())
 	}
 	form := url.Values{"csrf_token": {csrfFrom(cookies)}}
 	recorder := serveForm(fixture, http.MethodPost, fmt.Sprintf("/sources/%d/pair", source.ID), cookies, form)
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/sources?notice=pairing-unavailable" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/api/sources?notice=pairing-unavailable" {
 		t.Fatalf("pair without profile = %d location=%q", recorder.Code, recorder.Header().Get("Location"))
 	}
 }
@@ -464,11 +456,11 @@ func TestBookingSubmissionExplainsDuplicateWithoutCreatingAnotherJob(t *testing.
 	cookies := loginCookies(t, fixture)
 	form := url.Values{"csrf_token": {csrfFrom(cookies)}, "lake_id": {"buntzen"}, "target_date": {"2030-01-15"}, "pass_priority_1": {"all_day"}}
 	first := serveForm(fixture, http.MethodPost, "/bookings/new", cookies, form)
-	if first.Code != http.StatusSeeOther || !strings.HasPrefix(first.Header().Get("Location"), "/jobs/") {
+	if first.Code != http.StatusSeeOther || !strings.HasPrefix(first.Header().Get("Location"), "/api/jobs/") {
 		t.Fatalf("first booking=%d location=%q", first.Code, first.Header().Get("Location"))
 	}
 	duplicate := serveForm(fixture, http.MethodPost, "/bookings/new", cookies, form)
-	if duplicate.Code != http.StatusUnprocessableEntity || !strings.Contains(duplicate.Body.String(), "already has a booking or pending job for that date") || !strings.Contains(duplicate.Body.String(), `role="alert"`) {
+	if duplicate.Code != http.StatusUnprocessableEntity || !strings.Contains(duplicate.Body.String(), "already has a booking or pending job for that date") || apiData[quickBookingData](t, duplicate.Body.String(), "quick_booking").FormError == "" {
 		t.Fatalf("duplicate booking=%d body=%s", duplicate.Code, duplicate.Body.String())
 	}
 	for range 2 {
@@ -539,7 +531,7 @@ func testSSESessionExpiry(t *testing.T, public, idle bool) {
 	}
 	server := httptest.NewServer(fixture.handler)
 	defer server.Close()
-	request, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/jobs/%d/events", server.URL, job.ID), nil)
+	request, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/jobs/%d/events", server.URL, job.ID), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,4 +583,15 @@ func testSSESessionExpiry(t *testing.T, public, idle bool) {
 			t.Fatal("revoked SSE session remained connected")
 		}
 	}
+}
+
+// apiRequest explicitly addresses the JSON API, retaining public health probes.
+func apiRequest(method, target string, body io.Reader) *http.Request {
+	request := httptest.NewRequest(method, target, body)
+	if request.URL.Path != "/healthz" && !strings.HasPrefix(request.URL.Path, "/api/") {
+		request.URL.Path = "/api" + request.URL.Path
+		request.RequestURI = request.URL.RequestURI()
+	}
+	request.Header.Set("Accept", "application/json")
+	return request
 }

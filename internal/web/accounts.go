@@ -57,7 +57,7 @@ func (s *Server) accountPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.clearAuthCookies(w)
-	http.Redirect(w, r, "/login?ok=password-changed", http.StatusSeeOther)
+	apiRedirect(w, r, "/login?ok=password-changed", http.StatusSeeOther)
 }
 
 func (s *Server) accountUsername(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +83,7 @@ func (s *Server) accountUsername(w http.ResponseWriter, r *http.Request) {
 		s.renderAccount(w, r, "The current password was not accepted.")
 		return
 	}
-	http.Redirect(w, r, "/account?ok=username-changed", http.StatusSeeOther)
+	apiRedirect(w, r, "/account?ok=username-changed", http.StatusSeeOther)
 }
 
 // Both self-service changes verify a password, so they share admission and
@@ -136,7 +136,7 @@ func (s *Server) renderAccountStatus(w http.ResponseWriter, r *http.Request, sta
 	if r.Method == http.MethodPost && r.URL.Path == "/account/username" {
 		username = strings.TrimSpace(r.Form.Get("username"))
 	}
-	s.render(w, status, "account", accountPageData{
+	s.respond(w, status, "account", accountPageData{
 		BaseData:         base(r, "Account"),
 		Error:            formError,
 		FormUsername:     username,
@@ -186,7 +186,7 @@ func (s *Server) usersPage(w http.ResponseWriter, r *http.Request) {
 			Editable:      user.Role == model.RoleMember,
 		})
 	}
-	s.render(w, http.StatusOK, "users", data)
+	s.respond(w, http.StatusOK, "users", data)
 }
 
 type userPageData struct {
@@ -215,11 +215,11 @@ func (s *Server) userCreate(w http.ResponseWriter, r *http.Request) {
 		s.renderUserNew(w, r, username, accountFormError(err))
 		return
 	}
-	http.Redirect(w, r, "/admin/users?ok=user-created", http.StatusSeeOther)
+	apiRedirect(w, r, "/admin/users?ok=user-created", http.StatusSeeOther)
 }
 
 func (s *Server) renderUserNew(w http.ResponseWriter, r *http.Request, username, formError string) {
-	s.render(w, formStatus(formError), "user", userPageData{
+	s.respond(w, formStatus(formError), "user", userPageData{
 		BaseData:     base(r, "New user"),
 		Heading:      "New user",
 		Description:  "Create a regular member account. Administrator privileges cannot be assigned here.",
@@ -270,7 +270,7 @@ func (s *Server) userUpdate(w http.ResponseWriter, r *http.Request) {
 		s.renderUserEdit(w, r, id, username, status == model.UserActive, accountFormError(err))
 		return
 	}
-	http.Redirect(w, r, "/admin/users?ok=user-updated", http.StatusSeeOther)
+	apiRedirect(w, r, "/admin/users?ok=user-updated", http.StatusSeeOther)
 }
 
 func (s *Server) userResetPassword(w http.ResponseWriter, r *http.Request) {
@@ -300,7 +300,7 @@ func (s *Server) userResetPassword(w http.ResponseWriter, r *http.Request) {
 		s.renderUserEdit(w, r, id, current.Username, current.Status == model.UserActive, accountFormError(err))
 		return
 	}
-	http.Redirect(w, r, "/admin/users?ok=user-password", http.StatusSeeOther)
+	apiRedirect(w, r, "/admin/users?ok=user-password", http.StatusSeeOther)
 }
 
 func (s *Server) userDelete(w http.ResponseWriter, r *http.Request) {
@@ -323,14 +323,14 @@ func (s *Server) userDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.engine.ReconcileStorage(r.Context()); err != nil {
 		slog.Error("post-deletion managed storage reconciliation failed; periodic maintenance will retry", "error", err)
-		http.Redirect(w, r, "/admin/users?ok=user-deleted-cleanup", http.StatusSeeOther)
+		apiRedirect(w, r, "/admin/users?ok=user-deleted-cleanup", http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/admin/users?ok=user-deleted", http.StatusSeeOther)
+	apiRedirect(w, r, "/admin/users?ok=user-deleted", http.StatusSeeOther)
 }
 
 func (s *Server) renderUserEdit(w http.ResponseWriter, r *http.Request, id int64, username string, enabled bool, formError string) {
-	s.render(w, formStatus(formError), "user", userPageData{
+	s.respond(w, formStatus(formError), "user", userPageData{
 		BaseData:      base(r, "Manage user"),
 		Heading:       "Manage " + username,
 		Description:   "Rename, enable, disable, reset, or permanently delete this member account.",

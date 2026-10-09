@@ -1,6 +1,6 @@
 # Lake Pass Bot
 
-Lake Pass Bot is a self-hosted app for planning and booking lake passes. Set up a supported lake once, choose a date and passes, then follow the booking in Jobs. A Go service provides the web UI, scheduling, job state, and encrypted storage; separate supervised Python/Playwright processes perform the browser actions.
+Lake Pass Bot is a self-hosted app for planning and booking lake passes. Set up a supported lake once, choose a date and passes, then follow the booking in Jobs. A React and TypeScript interface connects to a Go service for accounts, scheduling, job state, and encrypted storage; separate supervised Python/Playwright processes perform the browser actions.
 
 [Quick start](#quick-start-with-docker-compose) · [How booking works](docs/lakes.md) · [Explore the job engine](internal/engine)
 
@@ -17,7 +17,7 @@ Choose a visit date and ranked pass preferences. The app explains when the job w
 
 Jobs tracks booking attempts through their waiting, approval, and completion states.
 
-![Lake Pass Bot job history showing sample bookings waiting to start, awaiting approval, and completed](docs/screenshots/jobs.jpg)
+![Lake Pass Bot job history showing a queued visit and a cancelled booking](docs/screenshots/jobs.jpg)
 
 </details>
 
@@ -166,23 +166,32 @@ BlueBubbles can retrieve an OTP only when the SMS reaches Messages on its Mac th
 
 ## Native macOS development
 
-Native development requires Go 1.27, Python 3.12, `uv`, and a local BlueBubbles server:
+Native development requires Go 1.27, Node.js 24, Python 3.12, `uv`, and your chosen OTP provider:
 
 ```bash
-brew install go uv
+brew install go uv node@24
+export PATH="$(brew --prefix node@24)/bin:$PATH"
 uv sync --project actions --locked --python 3.12
+make build
 
 export APPDATA_DIR="$PWD/.native-appdata"
 export LAKE_PASS_PYTHON="$PWD/actions/.venv/bin/python"
 export BLUEBUBBLES_URL="http://127.0.0.1:1234"
 export LAKE_PASS_BLUEBUBBLES_ENDPOINTS='[{"origin":"http://127.0.0.1:1234","networks":["127.0.0.1/32"]}]'
 
-go run ./cmd/lake-pass-bot serve
+./bin/lake-pass-bot serve
 ```
 
 Open `http://127.0.0.1:8080`. Select `chrome` in **Settings** for new native Yodel sign-ins, or bundled Chromium in Docker. Existing sign-ins keep their saved browser choice. If Chrome is installed elsewhere, the operator can set `LAKE_PASS_BROWSER_EXECUTABLE` to its absolute executable path; this overrides channel choices for every worker. User-supplied executable paths are rejected.
 
 Do not share browser profiles between Docker and macOS or run the same Yodel identity from both at once.
+
+The frontend uses React 19, TypeScript, Vite, Tailwind 4, React Router, TanStack
+Query, and shadcn/Radix component conventions, matching Jotist's frontend stack.
+`make build` compiles the frontend and embeds it in the Go binary. Docker builds
+perform both steps automatically; Node is not needed in the running container.
+For frontend hot reload, run the Go service on port 8080 and `npm run dev` from
+`web/frontend` in another terminal. See [frontend development](docs/frontend.md).
 
 ## Common commands
 
@@ -212,6 +221,13 @@ For live logs, use `docker compose logs --follow --tail=300 lake-pass-bot`. Set 
 ## Tests
 
 ```bash
+cd web/frontend
+npm ci
+npm test
+npm run build
+npx playwright install chromium
+npm run test:browser
+cd ../..
 go vet ./...
 go test -race ./...
 uvx --from ruff==0.12.10 ruff check actions scripts/release

@@ -17,7 +17,7 @@ import (
 
 func networkLoginStatus(f webFixture, host string) int {
 	w := httptest.NewRecorder()
-	f.handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://"+host+"/login", nil))
+	f.handler.ServeHTTP(w, apiRequest(http.MethodGet, "http://"+host+"/login", nil))
 	return w.Code
 }
 
@@ -33,7 +33,7 @@ func TestNetworkSettingsToggleAppliesImmediatelyAndAfterServerRestart(t *testing
 		"allowed_hosts": {"EXAMPLE.TEST\nadditional.example:8091\nexample.test"},
 	}
 	w := serveForm(f, http.MethodPost, "/settings/network", cookies, form)
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/settings/network?ok=updated" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/api/settings/network?ok=updated" {
 		t.Fatalf("save network settings = %d: %s", w.Code, w.Body.String())
 	}
 	saved, err := f.store.SystemGetNetworkSettings(context.Background())
@@ -123,7 +123,7 @@ func TestNetworkSettingsPreventLockoutAndRejectInvalidHosts(t *testing.T) {
 	for _, hosts := range []string{"other.example", "https://example.test", "*.example", "example.test:99999"} {
 		form := url.Values{"csrf_token": {csrfFrom(cookies)}, "host_check_enabled": {"on"}, "allowed_hosts": {hosts}}
 		w := serveForm(f, http.MethodPost, "/settings/network", cookies, form)
-		if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), `id="form-error"`) {
+		if w.Code != http.StatusUnprocessableEntity || apiData[networkSettingsPageData](t, w.Body.String(), "network_settings").FormError == "" {
 			t.Fatalf("invalid list %q = %d: %s", hosts, w.Code, w.Body.String())
 		}
 	}
