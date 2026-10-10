@@ -38,8 +38,8 @@ or describe the repository as having no security backlog.
 
 ## Delivery verification
 
-The current blue UI update is being released as 0.8.1. Its deployment receipt
-must record the published source SHA, accepted registry digest, actual running
+The blue UI update is the 0.8.1 release. Each deployment receipt must record
+the published source SHA, accepted registry digest, actual running
 image/version, health response, and comparison of preserved runtime/data/key
 state. A merged PR or published tag alone does not complete this task.
 
