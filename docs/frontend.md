@@ -6,6 +6,58 @@ shadcn-style components built on Radix primitives. These are the same core
 frameworks and component conventions used by Jotist. Application pages must use
 this frontend; do not reintroduce HTMX or Go HTML templates.
 
+## v0.8.0 interface changes and flow compatibility
+
+The migration in [PR #106](https://github.com/jaysqvl/lake-pass-bot/pull/106)
+also introduced a visual redesign. React did not require changing the appearance;
+the new sidebar, mobile menu, typography, cards, forms, sign-in screen, and job
+layout are separate presentation decisions included in that release.
+
+Compared with v0.7.3, the main workflows map as follows:
+
+| Area | Retained behavior | Visible or interaction change |
+| --- | --- | --- |
+| Navigation | Home, Lakes, Bookings, Jobs, OTP sources, Settings, and account pages remain accessible at their existing browser URLs. | The sidebar order is now Home, Lakes, Bookings, Jobs, OTP sources, Settings. Account access sits at the bottom; small screens use a collapsible menu. |
+| Lake setup | Choose a default OTP source, add a lake account, sign in or pair, then save vehicle and booking preferences. Multiple accounts still use an explicit booking account. | Connection and preference cards are restyled; their actions use the same server handlers. |
+| Booking | Choose a lake, visit date, and up to three distinct ranked passes; Book creates a job. Existing jobs retain their saved settings when defaults change. | Forms and validation are rendered by React. Validation keeps the submitted draft and focuses its error. |
+| Jobs and approval | Live progress, OTP/pairing candidates, booking review, final approval, and cancellation remain separate actions. The engine still enforces admission and approval. | The progress, details, and event panels are restyled. Failed decisions remain visible in the job; uncertain decisions are not retried automatically. |
+| Account and administration | Username/password changes, member access, password resets, ownership checks, and deletion rules remain server enforced. | Member deletion first reveals the username confirmation form. It becomes available after the account is disabled and active jobs have finished. |
+
+The Go booking engine, control hub, storage/schema, and Python provider code were
+not changed by the UI migration. Automatic queueing and the old saved-request
+editor had already been retired before v0.8.0; that was not part of this redesign.
+
+There are technical compatibility changes: JavaScript is now required for the
+application UI, and direct HTTP clients must use the `/api` prefix for application
+requests. Normal browser links and reloads retain their URLs. The running
+container still serves both the UI and API from one Go service.
+
+The follow-up compatibility review restored the dark navy and blue palette from
+v0.7.3 while retaining the React layout and workflows. It also restored the
+keyboard **Skip to content** link omitted by the redesign and added a browser
+check that activates it and verifies focus reaches the main content.
+
+Verification combines frontend/API component tests, the Go web tests, and a
+desktop/mobile browser journey using the real Go API with disposable data.
+Pairing and final-approval client behavior are covered by component tests; the
+browser journey does not start workers or complete a real Yodel checkout. These
+checks support workflow compatibility, not a guarantee of successful bookings
+against the live provider.
+
+## Visual identity and screenshots
+
+Preserve the app's dark navy surfaces and blue accents when changing frontend
+frameworks or components. The shared theme in `src/index.css` uses background
+`#10151c`, cards `#171e28`, text `#e8edf4`, and primary blue `#80b8fa`. Status
+colours remain semantic: green for success, amber for warnings, and red for
+errors. The ticket-and-waves favicon retains its blue identity.
+
+README images must show the current app using synthetic data. After a visible
+change, run the isolated browser journey and copy its `workspace.jpg`,
+`booking.jpg`, and `jobs.jpg` outputs to `docs/screenshots`. Inspect both desktop
+and mobile output before publishing. Do not substitute mockups or real account,
+OTP, or reservation data.
+
 ## Build and run
 
 Install Node.js 24 and Go 1.27. Run `make build` at the repository root to install
@@ -21,6 +73,32 @@ hashed Vite assets are immutable.
 For hot reload, start the Go service on port 8080, then run `npm run dev` inside
 `web/frontend`. Vite proxies `/api` and `/healthz` while preserving the incoming
 Host, so the existing browser-origin and CSRF checks continue to apply.
+
+### Previews without signing in
+
+When showing development changes, use the isolated fixture with automatic
+sign-in. It creates a disposable `preview-admin` account and a real session,
+including CSRF checks. Refreshing or restarting the fixture requires no login.
+The database is temporary and workers never start, so use synthetic data.
+
+Run these in two terminals from the repository root:
+
+```sh
+LAKE_PASS_DEV_AUTO_LOGIN=true LAKE_PASS_DEV_PORT=18093 go run ./scripts/ui-fixture
+cd web/frontend
+LAKE_PASS_DEV_API_ORIGIN=http://127.0.0.1:18093 npm run dev -- --host 0.0.0.0 --port 18642 --strictPort
+```
+
+Open `http://<development-host>:18642/` on the development machine's LAN. Vite updates
+the UI as it changes. The fixture API always binds to loopback; expose the Vite
+preview only on a trusted development network. No production appdata is loaded.
+Signing out immediately signs the disposable account back in on the next page.
+
+`LAKE_PASS_DEV_AUTO_LOGIN` defaults to false and is read only by
+`scripts/ui-fixture`; the production binary and Docker image retain normal
+authentication. Leave it off for setup, login, password, and account isolation
+tests. `LAKE_PASS_DEV_PORT` defaults to 18092; keep the interactive preview on
+18093 so the normal browser suite can run independently.
 
 ## API and authentication
 
