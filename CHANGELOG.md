@@ -1,11 +1,33 @@
 # Changelog
 
+## Unreleased
+
+* Restore the keyboard Skip to content link omitted by the React migration.
+* Document the v0.8.0 visual redesign, retained booking flows, and compatibility changes.
+
 ## [0.8.0](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.7.3...lake-pass-bot-v0.8.0) (2026-10-09)
 
 
 ### Features
 
 * migrate application UI to React ([#106](https://github.com/jaysqvl/lake-pass-bot/issues/106)) ([2492f93](https://github.com/jaysqvl/lake-pass-bot/commit/2492f9305d8762c7151b1c402d9e6c92879f346f))
+
+### Interface and compatibility
+
+This release also redesigns the interface: a new sidebar and mobile menu,
+updated typography, cards, forms, sign-in screen, and live job presentation.
+It is a visible design change as well as a frontend framework migration.
+
+The booking workflow remains OTP source → lake account and preferences → visit
+date and ranked passes → job progress → final approval. Booking admission,
+release timing, job cancellation, saved job settings, the database schema, and
+Yodel browser automation retain their v0.7.3 behavior.
+
+Browser page URLs remain available, but the UI now requires JavaScript and
+direct HTTP integrations must use `/api/...`. Member deletion adds a confirmation
+reveal before entering the username; the server still requires a disabled
+account with no active jobs. See the [interface changes and flow comparison](docs/frontend.md#v080-interface-changes-and-flow-compatibility)
+for details and verification limits.
 
 ## [0.7.3](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.7.2...lake-pass-bot-v0.7.3) (2026-10-05)
 

@@ -6,6 +6,43 @@ shadcn-style components built on Radix primitives. These are the same core
 frameworks and component conventions used by Jotist. Application pages must use
 this frontend; do not reintroduce HTMX or Go HTML templates.
 
+## v0.8.0 interface changes and flow compatibility
+
+The migration in [PR #106](https://github.com/jaysqvl/lake-pass-bot/pull/106)
+also introduced a visual redesign. React did not require changing the appearance;
+the new sidebar, mobile menu, typography, cards, forms, sign-in screen, and job
+layout are separate presentation decisions included in that release.
+
+Compared with v0.7.3, the main workflows map as follows:
+
+| Area | Retained behavior | Visible or interaction change |
+| --- | --- | --- |
+| Navigation | Home, Lakes, Bookings, Jobs, OTP sources, Settings, and account pages remain accessible at their existing browser URLs. | The sidebar order is now Home, Lakes, Bookings, Jobs, OTP sources, Settings. Account access sits at the bottom; small screens use a collapsible menu. |
+| Lake setup | Choose a default OTP source, add a lake account, sign in or pair, then save vehicle and booking preferences. Multiple accounts still use an explicit booking account. | Connection and preference cards are restyled; their actions use the same server handlers. |
+| Booking | Choose a lake, visit date, and up to three distinct ranked passes; Book creates a job. Existing jobs retain their saved settings when defaults change. | Forms and validation are rendered by React. Validation keeps the submitted draft and focuses its error. |
+| Jobs and approval | Live progress, OTP/pairing candidates, booking review, final approval, and cancellation remain separate actions. The engine still enforces admission and approval. | The progress, details, and event panels are restyled. Failed decisions remain visible in the job; uncertain decisions are not retried automatically. |
+| Account and administration | Username/password changes, member access, password resets, ownership checks, and deletion rules remain server enforced. | Member deletion first reveals the username confirmation form. It becomes available after the account is disabled and active jobs have finished. |
+
+The Go booking engine, control hub, storage/schema, and Python provider code were
+not changed by the UI migration. Automatic queueing and the old saved-request
+editor had already been retired before v0.8.0; that was not part of this redesign.
+
+There are technical compatibility changes: JavaScript is now required for the
+application UI, and direct HTTP clients must use the `/api` prefix for application
+requests. Normal browser links and reloads retain their URLs. The running
+container still serves both the UI and API from one Go service.
+
+The follow-up compatibility review restored the keyboard **Skip to content**
+link omitted by the redesign and added a browser check that activates it and
+verifies focus reaches the main content.
+
+Verification combines frontend/API component tests, the Go web tests, and a
+desktop/mobile browser journey using the real Go API with disposable data.
+Pairing and final-approval client behavior are covered by component tests; the
+browser journey does not start workers or complete a real Yodel checkout. These
+checks support workflow compatibility, not a guarantee of successful bookings
+against the live provider.
+
 ## Build and run
 
 Install Node.js 24 and Go 1.27. Run `make build` at the repository root to install

@@ -26,6 +26,8 @@ h2 { font-size: 1.08rem; font-weight: 650; letter-spacing: -.02em; }
 h3 { font-size: 1rem; font-weight: 600; }
 p { line-height: 1.65; }
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.skip-link { position: fixed; top: 12px; left: 12px; z-index: 100; transform: translateY(-200%); padding: 10px 16px; border-radius: 8px; background: var(--background); color: var(--foreground); }
+.skip-link:focus { transform: translateY(0); }
 fieldset { min-width: 0; }
 .app-layout { display: grid; grid-template-columns: 244px minmax(0, 1fr); min-height: 100dvh; }
 .sidebar { display: flex; flex-direction: column; position: sticky; top: 0; height: 100dvh; background: #fff; padding: 30px 18px 18px; border-right: 1px solid var(--border); }
