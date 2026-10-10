@@ -22,19 +22,41 @@ container health do not establish that the provider issued a pass.
 | UI | Desktop/mobile browser coverage exercises setup, lake configuration, booking snapshots, cancellation, settings, password replacement and member isolation. The blue palette and screenshots are restored. This is not coverage of every failure and accessibility case. [Frontend verification](frontend.md). |
 | Development | `LAKE_PASS_DEV_AUTO_LOGIN=true` skips interactive login only in the disposable fixture. Restart/session recovery and CSRF rejection are tested. Production authentication is unchanged. |
 
-The issue inventory returned no open issues. One dependency PR, [#104](https://github.com/jaysqvl/lake-pass-bot/pull/104),
-remained open at review time. Neither an empty issue list nor absence of source
-TODO markers establishes absence of defects. The older maintainability review
-explicitly covers the 0.6.2 baseline, not all later changes.
+The issue inventory returned no open issues. The pending SQLite dependency
+update, [#104](https://github.com/jaysqvl/lake-pass-bot/pull/104), was merged after
+all five required checks passed on its updated head, including the container
+smoke test and HIGH/CRITICAL image scan. It updates `modernc.org/sqlite` to
+1.60.1 and `modernc.org/libc` to 1.77.1. Neither an empty issue list nor absence
+of source TODO markers establishes absence of defects. The older maintainability
+review explicitly covers the 0.6.2 baseline, not all later changes.
 
-GitHub separately reported **20 open dependency alerts** (2 critical, 7 high,
-11 medium). All refer to the removed root `uv.lock`, covering PyJWT, AnyIO,
-urllib3 and multidict. The current tree contains `actions/uv.lock` instead;
-none of those four packages is in that lock or installed in the inspected
-production Python environment. These alerts therefore do not establish current
-runtime exposure. Reconcile the stale dependency graph/alerts with that evidence
-and verify fresh scanning of active manifests; do not simply ignore the warning
-or describe the repository as having no security backlog.
+GitHub's **20 obsolete-manifest dependency alerts** (2 critical, 7 high,
+11 medium) were reviewed and dismissed as `not_used` on 2026-10-10 UTC, with
+per-alert evidence. All referred to the removed root `uv.lock`, covering PyJWT,
+AnyIO, urllib3 and multidict. None is present in the current active lockfiles
+or installed in the inspected 0.8.1 production image; this disposition does not
+accept a vulnerable runtime dependency. The fresh GitHub inventory returned
+zero open alerts after those dispositions. Dependabot now includes weekly npm
+updates for `web/frontend`, alongside Go, Python, Docker and Actions. The npm
+audit rejects low-severity findings as well. Keep auditing the active manifests
+and runtime images; zero open GitHub alerts is not a security certification.
+
+The fresh Python runtime/build audits and npm audit found no known vulnerabilities.
+Go's symbol and imported-package review found none reachable. Its broader module
+inventory still reports [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932) for
+the unmaintained OpenPGP packages inside `golang.org/x/crypto`, with no upstream
+fixed version. This application imports only `argon2` from that module; OpenPGP
+is absent from the complete package dependency graph and is not compiled into
+the application. Keep that distinction visible rather than suppressing the
+advisory or replacing the password hash scheme to silence a module inventory.
+
+The requested Codex Security Deep Scan could not start on 2026-10-10 UTC.
+The coordinator rejected the session because it did not provide a managed
+filesystem permission profile for read-only workers. No repository review ran,
+no findings were produced, and there is no completed deep-scan report. Dependency
+audits and the bounded readiness review above do not replace that missing audit.
+Security sign-off remains open until the deep scan completes and any findings
+are remediated and verified.
 
 ## Delivery verification
 
@@ -138,10 +160,9 @@ SSO/MFA requirements, access lifecycle, key custody, secret rotation, retention
 and privacy requirements. Add durable administrative/security audit records
 separate from booking progress where required.
 
-Enforce independent PR review for consequential changes, define dependency
-triage/support/security response owners, and review the pending dependency update.
-Reconcile the 20 obsolete-manifest dependency alerts above and retain the
-evidence for their disposition.
+Enforce independent PR review for consequential changes and define dependency
+triage/support/security response owners. Retain evidence for removed-dependency
+alert dispositions and require fresh checks for dependency updates.
 Make approved-image identity and attestation verification part of installation
 receipts; ordinary Portainer updates do not perform attestation verification.
 Document provider-automation suitability, license/dependency review and support

@@ -74,7 +74,7 @@ jobs:
         working-directory: web/frontend
         run: |
           npm ci
-          npm audit --audit-level=moderate
+          npm audit --audit-level=low
           npm test
           npm run build
       - name: Install UI browser
