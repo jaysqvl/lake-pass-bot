@@ -6,6 +6,13 @@
 * Restore the keyboard Skip to content link omitted by the React migration.
 * Document the v0.8.0 visual redesign, retained booking flows, and compatibility changes.
 
+## [0.8.1](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.8.0...lake-pass-bot-v0.8.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **ui:** restore blue identity and document React migration ([#108](https://github.com/jaysqvl/lake-pass-bot/issues/108)) ([f0c1a3b](https://github.com/jaysqvl/lake-pass-bot/commit/f0c1a3b849f0e991aa279ef8e73a3da7f9dc8035))
+
 ## [0.8.0](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.7.3...lake-pass-bot-v0.8.0) (2026-10-09)
 
 
