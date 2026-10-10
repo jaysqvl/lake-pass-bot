@@ -6,7 +6,7 @@ Lake Pass Bot is a self-hosted app for planning and booking lake passes. Set up 
 
 ![Lake Pass Bot Home showing upcoming visits and lake connection status](docs/screenshots/workspace.jpg)
 
-*Actual app UI with synthetic demo data from an isolated local database. No live accounts, OTPs, or reservations were used.*
+*Current app UI in the blue theme, with synthetic demo data from an isolated local database. No live accounts, OTPs, or reservations were used.*
 
 <details>
 <summary>See the booking form and job history</summary>

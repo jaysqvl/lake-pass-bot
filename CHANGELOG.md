@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+* Restore the dark navy and blue app identity and refresh the README screenshots to match.
 * Restore the keyboard Skip to content link omitted by the React migration.
 * Document the v0.8.0 visual redesign, retained booking flows, and compatibility changes.
 

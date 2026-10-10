@@ -32,9 +32,10 @@ application UI, and direct HTTP clients must use the `/api` prefix for applicati
 requests. Normal browser links and reloads retain their URLs. The running
 container still serves both the UI and API from one Go service.
 
-The follow-up compatibility review restored the keyboard **Skip to content**
-link omitted by the redesign and added a browser check that activates it and
-verifies focus reaches the main content.
+The follow-up compatibility review restored the dark navy and blue palette from
+v0.7.3 while retaining the React layout and workflows. It also restored the
+keyboard **Skip to content** link omitted by the redesign and added a browser
+check that activates it and verifies focus reaches the main content.
 
 Verification combines frontend/API component tests, the Go web tests, and a
 desktop/mobile browser journey using the real Go API with disposable data.
@@ -42,6 +43,20 @@ Pairing and final-approval client behavior are covered by component tests; the
 browser journey does not start workers or complete a real Yodel checkout. These
 checks support workflow compatibility, not a guarantee of successful bookings
 against the live provider.
+
+## Visual identity and screenshots
+
+Preserve the app's dark navy surfaces and blue accents when changing frontend
+frameworks or components. The shared theme in `src/index.css` uses background
+`#10151c`, cards `#171e28`, text `#e8edf4`, and primary blue `#80b8fa`. Status
+colours remain semantic: green for success, amber for warnings, and red for
+errors. The ticket-and-waves favicon retains its blue identity.
+
+README images must show the current app using synthetic data. After a visible
+change, run the isolated browser journey and copy its `workspace.jpg`,
+`booking.jpg`, and `jobs.jpg` outputs to `docs/screenshots`. Inspect both desktop
+and mobile output before publishing. Do not substitute mockups or real account,
+OTP, or reservation data.
 
 ## Build and run
 
