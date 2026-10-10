@@ -17,6 +17,14 @@ updates:
       python-dependencies:
         patterns: ["*"]
 
+  - package-ecosystem: npm
+    directory: /web/frontend
+    schedule:
+      interval: weekly
+    groups:
+      frontend-dependencies:
+        patterns: ["*"]
+
   - package-ecosystem: docker
     directory: /
     schedule:
