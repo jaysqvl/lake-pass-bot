@@ -92,6 +92,8 @@ installation-level evidence.
 job events exist. `/healthz` checks database availability; it is not proof of
 provider connectivity, worker readiness or successful bookings. No operational
 metrics/alert integration was found in the reviewed application surfaces.
+The inspected installation still had `LAKE_PASS_DEBUG=true`, which overrides
+its `info` level; return to routine logging after diagnostic work is complete.
 
 Add bounded counters/timing and alerts for failed or unknown bookings, missed
 release windows, unavailable OTP/provider connections, worker failures, storage
