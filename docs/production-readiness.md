@@ -27,6 +27,15 @@ remained open at review time. Neither an empty issue list nor absence of source
 TODO markers establishes absence of defects. The older maintainability review
 explicitly covers the 0.6.2 baseline, not all later changes.
 
+GitHub separately reported **20 open dependency alerts** (2 critical, 7 high,
+11 medium). All refer to the removed root `uv.lock`, covering PyJWT, AnyIO,
+urllib3 and multidict. The current tree contains `actions/uv.lock` instead;
+none of those four packages is in that lock or installed in the inspected
+production Python environment. These alerts therefore do not establish current
+runtime exposure. Reconcile the stale dependency graph/alerts with that evidence
+and verify fresh scanning of active manifests; do not simply ignore the warning
+or describe the repository as having no security backlog.
+
 ## Delivery verification
 
 The current blue UI update is being released as 0.8.1. Its deployment receipt
@@ -131,6 +140,8 @@ separate from booking progress where required.
 
 Enforce independent PR review for consequential changes, define dependency
 triage/support/security response owners, and review the pending dependency update.
+Reconcile the 20 obsolete-manifest dependency alerts above and retain the
+evidence for their disposition.
 Make approved-image identity and attestation verification part of installation
 receipts; ordinary Portainer updates do not perform attestation verification.
 Document provider-automation suitability, license/dependency review and support
