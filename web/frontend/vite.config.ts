@@ -10,8 +10,8 @@ export default defineConfig({
   build: { outDir: '../../internal/web/dist', emptyOutDir: true, sourcemap: false },
   server: {
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8080', changeOrigin: false },
-      '/healthz': { target: 'http://127.0.0.1:8080', changeOrigin: false },
+      '/api': { target: process.env.LAKE_PASS_DEV_API_ORIGIN || 'http://127.0.0.1:8080', changeOrigin: false },
+      '/healthz': { target: process.env.LAKE_PASS_DEV_API_ORIGIN || 'http://127.0.0.1:8080', changeOrigin: false },
     },
   },
   test: { include: ['src/**/*.test.{ts,tsx}'], environment: 'jsdom', setupFiles: ['./src/test/setup.ts'], restoreMocks: true },

@@ -74,6 +74,32 @@ For hot reload, start the Go service on port 8080, then run `npm run dev` inside
 `web/frontend`. Vite proxies `/api` and `/healthz` while preserving the incoming
 Host, so the existing browser-origin and CSRF checks continue to apply.
 
+### Previews without signing in
+
+When showing development changes, use the isolated fixture with automatic
+sign-in. It creates a disposable `preview-admin` account and a real session,
+including CSRF checks. Refreshing or restarting the fixture requires no login.
+The database is temporary and workers never start, so use synthetic data.
+
+Run these in two terminals from the repository root:
+
+```sh
+LAKE_PASS_DEV_AUTO_LOGIN=true LAKE_PASS_DEV_PORT=18093 go run ./scripts/ui-fixture
+cd web/frontend
+LAKE_PASS_DEV_API_ORIGIN=http://127.0.0.1:18093 npm run dev -- --host 0.0.0.0 --port 18642 --strictPort
+```
+
+Open `http://<development-host>:18642/` on the development machine's LAN. Vite updates
+the UI as it changes. The fixture API always binds to loopback; expose the Vite
+preview only on a trusted development network. No production appdata is loaded.
+Signing out immediately signs the disposable account back in on the next page.
+
+`LAKE_PASS_DEV_AUTO_LOGIN` defaults to false and is read only by
+`scripts/ui-fixture`; the production binary and Docker image retain normal
+authentication. Leave it off for setup, login, password, and account isolation
+tests. `LAKE_PASS_DEV_PORT` defaults to 18092; keep the interactive preview on
+18093 so the normal browser suite can run independently.
+
 ## API and authentication
 
 The Go service owns validation, authorization, booking admission, and durable
