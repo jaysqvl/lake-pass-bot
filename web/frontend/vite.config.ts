@@ -7,7 +7,8 @@ import { writeFileSync } from 'node:fs'
 export default defineConfig({
   plugins: [react(), tailwindcss(), { name: 'embed-placeholder', closeBundle: () => writeFileSync(fileURLToPath(new URL('../../internal/web/dist/.keep', import.meta.url)), '') }],
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
-  build: { outDir: '../../internal/web/dist', emptyOutDir: true, sourcemap: false },
+  // Preserve Vite 7's browser floor when upgrading the build toolchain.
+  build: { target: ['chrome107', 'edge107', 'firefox104', 'safari16'], outDir: '../../internal/web/dist', emptyOutDir: true, sourcemap: false },
   server: {
     proxy: {
       '/api': { target: process.env.LAKE_PASS_DEV_API_ORIGIN || 'http://127.0.0.1:8080', changeOrigin: false },
