@@ -49,6 +49,8 @@ jobs:
           python3 -m py_compile scripts/check_release_config.py scripts/check_build_backend.py scripts/docker_*_smoke.py scripts/release/*.py scripts/release/tests/*.py
       - name: Release publication tests
         run: python3 -m unittest discover -s scripts/release/tests
+      - name: Deployment cleanup contracts
+        run: python3 -m unittest discover -s scripts -p 'test_deployment_cleanup.py'
       - name: Vet
         run: go vet ./...
       - name: Unit and package tests

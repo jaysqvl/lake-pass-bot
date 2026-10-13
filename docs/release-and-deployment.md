@@ -31,6 +31,8 @@ when to install it:
    and build in the footer against the release you intended to install.
 5. Check the OTP source's **Test connection** and the relevant application flows.
    Container health alone does not prove that Yodel checkout works.
+6. Complete [recorded deployment cleanup](#required-cleanup-after-an-accepted-deployment)
+   after acceptance; capture the previous identity before step 3.
 
 Use the existing stack, port, and appdata directory. Re-pulling an image does not
 update your saved Compose file or add new environment settings. Portainer's
@@ -234,3 +236,67 @@ Keep booking evidence private. Never run the same Yodel identity concurrently
 from a development instance and the deployed service. Follow the
 [live testing procedure](live-testing.md) to distinguish a successful login or
 synthetic browser test from a pass actually issued by Yodel.
+
+## Required cleanup after an accepted deployment
+
+Agents and maintainers must complete this step for manual Compose, Portainer and
+native Docker deployments. Image publication alone does not run NAS cleanup.
+The helper requires Python 3.9+ on the client and Docker access locally or through
+an existing SSH alias; the Docker host does not need Python.
+
+Before pulling/replacing the service, capture its immutable identity in a new,
+private journal. Replace `nas`, `lake-pass-bot` and the unique journal name with the
+actual SSH alias, existing container name and deployment ID:
+
+```sh
+python3 scripts/deployment_cleanup.py --ssh-host nas capture \
+  --service lake-pass-bot --state tmp/deployment-UNIQUE.json
+```
+
+Keep the manager's configuration and a consistent data/key backup separately.
+Record the previous registry digest or preserve its build artifact for recovery;
+do not add a permanent local rollback tag. Track only disposable resources you
+created, using full IDs returned by Docker, for example:
+
+```sh
+python3 scripts/deployment_cleanup.py --ssh-host nas track \
+  --state tmp/deployment-UNIQUE.json --container-id FULL_64_CHARACTER_CANARY_ID
+python3 scripts/deployment_cleanup.py --ssh-host nas track \
+  --state tmp/deployment-UNIQUE.json --image-id sha256:FULL_64_CHARACTER_IMAGE_ID
+```
+
+After recreation, record the replacement's full container ID and image ID before
+running acceptance checks. Wait for the Portainer stack operation to settle, then verify the intended image/revision, healthcheck, doctor, UI and persisted requests/jobs/reservations. Use read-only provider checks and the authorized OTP connection test. A healthy container does not prove a completed booking; do not book a pass merely to qualify cleanup.
+Keep the old container stopped and available until acceptance. Stop any owned
+qualification containers by their recorded IDs. Then run:
+
+```sh
+python3 scripts/deployment_cleanup.py --ssh-host nas finish \
+  --state tmp/deployment-UNIQUE.json --container-id ACCEPTED_FULL_CONTAINER_ID \
+  --image-id sha256:ACCEPTED_FULL_IMAGE_ID --verified --dry-run
+# Review the preview, then repeat without --dry-run to perform cleanup.
+python3 scripts/deployment_cleanup.py --ssh-host nas finish \
+  --state tmp/deployment-UNIQUE.json --container-id ACCEPTED_FULL_CONTAINER_ID \
+  --image-id sha256:ACCEPTED_FULL_IMAGE_ID --verified
+```
+
+`--verified` declares that the project-specific checks above passed; it does not
+run them. The helper independently requires the exact accepted service to remain
+running (and healthy when Docker has a health check), and rechecks it before
+removal. It removes only recorded stopped/Created containers and unreferenced
+images by immutable ID. Every container state counts as an image reference;
+namespace, volume and writable-root dependencies are protected, including Unraid
+Btrfs bind aliases. Shared images stay. Mutable tags are never deletion targets.
+Native Docker may refuse a multi-tag image; report that blocker rather than force
+removal. Avoid creating extra rollback tags in the first place.
+
+If acceptance fails, preserve recovery resources and follow the rollback
+procedure. If cleanup fails after acceptance, keep the verified service running,
+report the blocker and retry the same journal after resolving it. A retry is
+idempotent. Include actual removed/protected IDs and cleanup status in the
+receipt. A dry run is a preview, not completed cleanup.
+
+This does not delete persistent data, keys, model caches, volumes, backups, VMs,
+ISOs or build caches. It never runs a host-wide prune. Do not delete Docker's
+internal storage paths manually. Existing unrecorded leftovers need a separate
+ownership/reference audit; this workflow prevents new untracked leftovers.
