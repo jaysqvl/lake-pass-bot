@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import sys
 import time
 import tempfile
@@ -161,6 +162,7 @@ class WorkerTests(unittest.TestCase):
             "malformed": ("print('not a browser')", "could not be determined"),
             "exit failure": ("print('Chrome 1.55.5010.0123'); raise SystemExit(1)", "could not be determined"),
             "timeout": ("import time; time.sleep(2)", "timed out"),
+            "version then hang": ("print('Chromium 1.55.5010.0123', flush=True); import time; time.sleep(2)", "timed out"),
         }
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "Test Chrome"
@@ -175,6 +177,43 @@ class WorkerTests(unittest.TestCase):
                     else:
                         self.assertIn("Chrome/1.55.5010.0123", _chromium_user_agent(str(executable)))
                     self.assertLess(time.monotonic() - started, 1.5)
+
+    def test_version_probe_uses_primary_exit_not_descendant_pipe_eof(self) -> None:
+        # A browser helper may inherit the output pipe after --version exits.
+        # It must not turn a completed successful probe into a false timeout.
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "Test Chrome"
+            pid_file = Path(directory) / "helper.pid"
+            for exit_code in (0, 9):
+                with self.subTest(exit_code=exit_code):
+                    executable.write_text(
+                        f"#!{sys.executable}\n"
+                        "import subprocess, sys\n"
+                        "from pathlib import Path\n"
+                        "child = subprocess.Popen([sys.executable, '-c', "
+                        "'import time; time.sleep(30)'], stdin=subprocess.DEVNULL)\n"
+                        f"Path({str(pid_file)!r}).write_text(str(child.pid))\n"
+                        "print('Chromium 1.55.5010.0123', flush=True)\n"
+                        f"raise SystemExit({exit_code})\n"
+                    )
+                    executable.chmod(0o700)
+                    try:
+                        with patch("lake_pass_actions.worker._VERSION_TIMEOUT_SECONDS", 0.5):
+                            if exit_code:
+                                with self.assertRaisesRegex(ActionError, "could not be determined"):
+                                    _chromium_user_agent(str(executable))
+                            else:
+                                self.assertIn(
+                                    "Chrome/1.55.5010.0123",
+                                    _chromium_user_agent(str(executable)),
+                                )
+                    finally:
+                        if pid_file.exists():
+                            try:
+                                os.kill(int(pid_file.read_text()), signal.SIGTERM)
+                            except ProcessLookupError:
+                                pass
+                            pid_file.unlink()
 
     def test_insecure_tls_test_seam_is_explicit_and_loopback_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
