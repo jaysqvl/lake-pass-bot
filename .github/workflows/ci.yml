@@ -51,6 +51,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/release/tests
       - name: Deployment cleanup contracts
         run: python3 -m unittest discover -s scripts -p 'test_deployment_cleanup.py'
+      - name: CI browser sandbox contracts
+        run: python3 -m unittest discover -s scripts -p 'test_ci_browser_apparmor.py'
       - name: Vet
         run: go vet ./...
       - name: Unit and package tests
@@ -105,7 +107,7 @@ jobs:
       - name: Sync locked environment
         run: uv sync --project actions --locked
       - name: Lint
-        run: uvx --from ruff==0.12.10 ruff check actions scripts/check_build_backend.py scripts/check_release_config.py scripts/docker_*_smoke.py scripts/release integration/*.py
+        run: uvx --from ruff==0.12.10 ruff check actions scripts/check_build_backend.py scripts/check_release_config.py scripts/ci_browser_apparmor.py scripts/test_ci_browser_apparmor.py scripts/docker_*_smoke.py scripts/release integration/*.py
       - name: Tests
         run: uv run --project actions python -m unittest discover -s actions/tests
       - name: Compile package
@@ -138,11 +140,43 @@ jobs:
       - name: Sync locked Python environment
         run: uv sync --project actions --locked
       - name: Install Playwright Chromium
-        run: uv run --project actions playwright install --with-deps chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/lake-pass-integration-browsers
+        run: |
+          uv run --project actions playwright install --with-deps chromium
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s\n' "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
+      - name: Allow the pinned Chromium sandbox in this CI job
+        shell: bash
+        run: |
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          name="lake-pass-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          source="$RUNNER_TEMP/$name"
+          profile="/etc/apparmor.d/$name"
+          uv run --project actions python scripts/ci_browser_apparmor.py --name "$name" --output "$source"
+          apparmor_parser --skip-kernel-load --skip-cache "$source"
+          sudo test ! -e "$profile"
+          sudo test ! -L "$profile"
+          sudo install -m 0644 "$source" "$profile"
+          sudo apparmor_parser --add --skip-cache "$profile"
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
       - name: Vet browser integration
         run: go vet -tags=integration ./integration/...
       - name: Browser integration
         run: LAKE_PASS_E2E_PYTHON="$PWD/actions/.venv/bin/python" go test -race -count=1 -tags=integration -timeout=5m ./integration/...
+      - name: Remove the CI-only browser profile
+        if: always()
+        shell: bash
+        run: |
+          name="lake-pass-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          profile="/etc/apparmor.d/$name"
+          if sudo test -f "$profile"; then
+            sudo apparmor_parser --remove --skip-cache "$profile"
+            sudo rm -- "$profile"
+          fi
+          if test -f "$RUNNER_TEMP/$name"; then
+            rm -- "$RUNNER_TEMP/$name"
+          fi
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
 
   docker:
     runs-on: ubuntu-latest

@@ -61,3 +61,12 @@ The tests use `actions/.venv/bin/python` when available and otherwise invoke
 even when the host also has Chrome installed. Set `LAKE_PASS_E2E_PYTHON` or
 `LAKE_PASS_E2E_BROWSER_EXECUTABLE` to explicit absolute executables when you intend
 to use a non-standard runtime.
+
+The Linux/x64 GitHub integration job installs its locked browsers into an
+isolated runner-temporary directory. Ubuntu restricts unprivileged user
+namespaces, so that job temporarily loads an AppArmor profile granting `userns`
+only to the two exact pinned Chromium executables. The generator rejects
+wildcards, stale revisions and symlinked binaries. An `always()` cleanup step
+unloads the profile and removes its files even after a failed test. The global
+namespace restriction stays enabled, Chromium's sandbox stays enabled, and no
+production/NAS profile or browser setting changes. Local runs do not load policy.
