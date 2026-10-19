@@ -106,13 +106,25 @@ def _browser_version_output(executable: str) -> str:
             try:
                 deadline = time.monotonic() + _VERSION_TIMEOUT_SECONDS
                 output = bytearray()
+                os.set_blocking(process.stdout.fileno(), False)
                 with selectors.DefaultSelector() as selector:
                     selector.register(process.stdout, selectors.EVENT_READ)
                     while True:
                         remaining = deadline - time.monotonic()
-                        if remaining <= 0 or not selector.select(remaining):
+                        if remaining <= 0:
                             raise ActionError("Chromium version probe timed out")
-                        chunk = os.read(process.stdout.fileno(), _VERSION_OUTPUT_LIMIT + 1 - len(output))
+                        # Browser helpers can inherit the pipe after --version
+                        # exits. Drain the primary process's output without
+                        # requiring those descendants to close their handles.
+                        ready = selector.select(min(remaining, 0.05))
+                        if not ready and process.poll() is None:
+                            continue
+                        try:
+                            chunk = os.read(process.stdout.fileno(), _VERSION_OUTPUT_LIMIT + 1 - len(output))
+                        except BlockingIOError:
+                            if process.poll() is not None:
+                                break
+                            continue
                         if not chunk:
                             break
                         output.extend(chunk)
