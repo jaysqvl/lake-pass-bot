@@ -6,6 +6,13 @@
 * Restore the keyboard Skip to content link omitted by the React migration.
 * Document the v0.8.0 visual redesign, retained booking flows, and compatibility changes.
 
+## [0.8.4](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.8.3...lake-pass-bot-v0.8.4) (2026-10-19)
+
+
+### Build System
+
+* **deps:** bump astral-sh/setup-uv from 10.2.0 to 10.3.0 ([#120](https://github.com/jaysqvl/lake-pass-bot/issues/120)) ([7cbb480](https://github.com/jaysqvl/lake-pass-bot/commit/7cbb48043b0669d86c90fe69ca73ef5ab427c986))
+
 ## [0.8.3](https://github.com/jaysqvl/lake-pass-bot/compare/lake-pass-bot-v0.8.2...lake-pass-bot-v0.8.3) (2026-10-12)
 
 
