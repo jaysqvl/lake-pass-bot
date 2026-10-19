@@ -57,5 +57,7 @@ go test -race -tags=integration ./integration -count=1 -timeout=5m
 ```
 
 The tests use `actions/.venv/bin/python` when available and otherwise invoke
-`uv`. Set `LAKE_PASS_E2E_PYTHON` or `LAKE_PASS_E2E_BROWSER_EXECUTABLE` to explicit
-absolute executables when a runner uses a non-standard layout.
+`uv`. By default they use the browser installed by the locked Playwright package,
+even when the host also has Chrome installed. Set `LAKE_PASS_E2E_PYTHON` or
+`LAKE_PASS_E2E_BROWSER_EXECUTABLE` to explicit absolute executables when you intend
+to use a non-standard runtime.

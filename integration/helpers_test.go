@@ -39,21 +39,10 @@ func pythonCommand(t *testing.T, repoRoot string, args ...string) (string, []str
 }
 
 func browserPath() string {
-	if configured := strings.TrimSpace(os.Getenv("LAKE_PASS_E2E_BROWSER_EXECUTABLE")); configured != "" {
-		return configured
-	}
-	for _, candidate := range []string{
-		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-		"/usr/bin/google-chrome",
-		"/usr/bin/chromium",
-		"/usr/bin/chromium-browser",
-	} {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
-	}
-	// The pinned Playwright runtime resolves its own bundled Chromium in CI.
-	return ""
+	// An empty override lets the locked Playwright runtime select its bundled
+	// browser. Host Chrome installations are unrelated to that pinned runtime;
+	// use one only when the operator explicitly requests it.
+	return strings.TrimSpace(os.Getenv("LAKE_PASS_E2E_BROWSER_EXECUTABLE"))
 }
 
 func nullableString(value string) any {
