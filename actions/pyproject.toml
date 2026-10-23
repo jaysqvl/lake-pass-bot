@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools==84.0.0"]
+requires = ["setuptools==84.2.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,7 @@ version = "0.8.5"
 description = "Supervised Playwright actions for the Lake Pass Bot control plane."
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "playwright==1.63.0",
+    "playwright==1.64.0",
 ]
 
 [project.scripts]
@@ -17,7 +17,7 @@ lake-pass-actions = "lake_pass_actions.worker:main"
 buntzen-actions = "lake_pass_actions.worker:main"
 
 [dependency-groups]
-dev = ["setuptools==84.0.0"]
+dev = ["setuptools==84.2.0"]
 
 [tool.uv]
 # Install the backend from the hash-verified lock before building this project.
