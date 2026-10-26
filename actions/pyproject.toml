@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools==84.0.0"]
+requires = ["setuptools==84.2.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -17,7 +17,7 @@ lake-pass-actions = "lake_pass_actions.worker:main"
 buntzen-actions = "lake_pass_actions.worker:main"
 
 [dependency-groups]
-dev = ["setuptools==84.0.0"]
+dev = ["setuptools==84.2.0"]
 
 [tool.uv]
 # Install the backend from the hash-verified lock before building this project.
