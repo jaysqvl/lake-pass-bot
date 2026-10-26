@@ -198,7 +198,7 @@ import importlib.util
 
 unexpected = [
     module
-    for module in ("msgpack", "setuptools", "aiohttp", "starlette")
+    for module in ("filelock", "python_discovery", "msgpack", "setuptools", "aiohttp", "starlette")
     if importlib.util.find_spec(module) is not None
 ]
 if unexpected:
