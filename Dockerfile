@@ -46,7 +46,8 @@ RUN apt-get update \
     && apt-get --yes --no-auto-remove purge gstreamer1.0-plugins-bad libgstreamer-plugins-bad1.0-0 \
     && python -m pip install --no-cache-dir --only-binary=:all: --require-hashes --requirement /tmp/lake-pass-actions-requirements.txt \
     && python -m pip check \
-    && python -m pip uninstall --yes virtualenv msgpack setuptools \
+    && python -m pip uninstall --yes virtualenv python-discovery filelock msgpack setuptools \
+    && python -m pip check \
     && python -m pip uninstall --yes pip \
     && rm /tmp/lake-pass-actions-requirements.txt /tmp/lake-pass-purge-plan /tmp/lake-pass-openssl-plan \
     && rm -rf /root/.cache /home/pwuser/.cache /var/lib/apt/lists/* \
