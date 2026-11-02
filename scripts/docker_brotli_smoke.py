@@ -24,9 +24,11 @@ const expected = { code: 'ERR__ERROR_FORMAT_BLOCK_SWITCH', errno: -17 };
   // the new permanent format error, including incremental input, instead.
   assert.equal(zlib.constants.BROTLI_DECODER_ERROR_FORMAT_BLOCK_SWITCH, -17);
   assert.throws(() => zlib.brotliDecompressSync(invalid), expected);
+  let malformedOutputBytes = 0;
   await new Promise((resolve, reject) => {
     const decoder = zlib.createBrotliDecompress();
     decoder.resume();
+    decoder.on('data', (chunk) => { malformedOutputBytes += chunk.length; });
     decoder.on('error', (error) => {
       try {
         assert.equal(error.code, expected.code);
@@ -45,7 +47,7 @@ const expected = { code: 'ERR__ERROR_FORMAT_BLOCK_SWITCH', errno: -17 };
   assert.throws(() => zlib.brotliDecompressSync(compressed.subarray(0, -1)));
   console.log(JSON.stringify({
     node: process.versions.node, brotliDisplayVersion: process.versions.brotli,
-    compressed: compressed.toString('hex'),
+    compressed: compressed.toString('hex'), malformedOutputBytes,
   }));
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 """
@@ -96,7 +98,7 @@ def main():
     assert state, "native decoder allocation failed"
     try:
         source = ctypes.create_string_buffer(INVALID_BLOCK_SWITCH)
-        output = ctypes.create_string_buffer(256)
+        output = ctypes.create_string_buffer(16384)
         remaining_input = ctypes.c_size_t(len(INVALID_BLOCK_SWITCH))
         next_input = ctypes.cast(source, byte_pointer)
         produced = 0
@@ -110,16 +112,21 @@ def main():
             )
             produced += len(output) - remaining_output.value
             calls += 1
-            assert produced <= 8 * 1024 * 1024 and calls <= 32769
+            # A Brotli metablock can expand to 16 MiB before the invalid
+            # switch. Bound this fixed upstream fixture to two such blocks.
+            assert produced <= 32 * 1024 * 1024 and calls <= 2049, (
+                f"native fixture output budget exceeded: {produced} bytes, {calls} calls"
+            )
             # NEEDS_MORE_OUTPUT is not success or malformed-input rejection.
             # Drain bounded chunks so the decoder can reach the invalid switch.
             if status != 3:
                 break
-        error_code = library.BrotliDecoderGetErrorCode(state)
         assert status == 0, (
             f"native malformed block switch was not a permanent error: "
-            f"status={status}, error={error_code}, output={produced}"
+            f"status={status}, output={produced}"
         )
+        # The C API only promises a detailed error after RESULT_ERROR.
+        error_code = library.BrotliDecoderGetErrorCode(state)
         assert error_code == -17, f"unexpected native format error: {error_code}"
     finally:
         library.BrotliDecoderDestroyInstance(state)
