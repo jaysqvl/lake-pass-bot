@@ -98,18 +98,35 @@ def main():
         source = ctypes.create_string_buffer(INVALID_BLOCK_SWITCH)
         output = ctypes.create_string_buffer(256)
         remaining_input = ctypes.c_size_t(len(INVALID_BLOCK_SWITCH))
-        remaining_output = ctypes.c_size_t(len(output))
         next_input = ctypes.cast(source, byte_pointer)
-        next_output = ctypes.cast(output, byte_pointer)
-        status = library.BrotliDecoderDecompressStream(
-            state, ctypes.byref(remaining_input), ctypes.byref(next_input),
-            ctypes.byref(remaining_output), ctypes.byref(next_output), None,
+        produced = 0
+        calls = 0
+        while True:
+            remaining_output = ctypes.c_size_t(len(output))
+            next_output = ctypes.cast(output, byte_pointer)
+            status = library.BrotliDecoderDecompressStream(
+                state, ctypes.byref(remaining_input), ctypes.byref(next_input),
+                ctypes.byref(remaining_output), ctypes.byref(next_output), None,
+            )
+            produced += len(output) - remaining_output.value
+            calls += 1
+            assert produced <= 8 * 1024 * 1024 and calls <= 32769
+            # NEEDS_MORE_OUTPUT is not success or malformed-input rejection.
+            # Drain bounded chunks so the decoder can reach the invalid switch.
+            if status != 3:
+                break
+        error_code = library.BrotliDecoderGetErrorCode(state)
+        assert status == 0, (
+            f"native malformed block switch was not a permanent error: "
+            f"status={status}, error={error_code}, output={produced}"
         )
-        assert status == 0, "native malformed block switch was not a permanent error"
-        assert library.BrotliDecoderGetErrorCode(state) == -17
+        assert error_code == -17, f"unexpected native format error: {error_code}"
     finally:
         library.BrotliDecoderDestroyInstance(state)
-    print(json.dumps({**report, "nativeDecoder": "block-switch rejected", "controls": "passed"}))
+    print(json.dumps({
+        **report, "nativeDecoder": "block-switch rejected", "controls": "passed",
+        "nativeCalls": calls, "nativeOutputBytes": produced,
+    }))
 
 
 if __name__ == "__main__":
