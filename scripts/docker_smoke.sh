@@ -180,6 +180,17 @@ assert context.check_hostname and context.verify_mode == ssl.CERT_REQUIRED
 assert context.cert_store_stats()["x509_ca"] > 0
 ' || fail "patched OpenSSL lost Python certificate-verification defaults"
 
+# The OS library and Playwright's statically linked Node decoder are distinct.
+# Check both actual decoders, not their upstream version strings alone.
+docker run --rm --network none --read-only --entrypoint sh "$image" -eu -c '
+  version="$(dpkg-query -W -f="\${Version}" libbrotli1)"
+  dpkg --compare-versions "$version" ge 1.1.0-2ubuntu0.1
+  printf "libbrotli1 %s\n" "$version"
+' || fail "runtime Brotli package lacks the required Noble security fix"
+docker run --rm --network none --read-only --memory=256m --pids-limit=64 \
+  --cap-drop=ALL --interactive --entrypoint python "$image" - \
+  < scripts/docker_brotli_smoke.py || fail "runtime Brotli security and legitimate-input controls failed"
+
 version_report="$(docker run --rm --read-only --network none \
   --env APPDATA_DIR=/uninitialized-appdata \
   --env MAX_CONCURRENT_JOBS=invalid-runtime-setting \
