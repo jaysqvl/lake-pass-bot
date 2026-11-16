@@ -7,7 +7,7 @@ RUN npm ci
 COPY web/frontend ./
 RUN npm run build
 
-FROM golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5 AS go-build
+FROM golang:1.27.4-bookworm@sha256:4fa7c968ba93f1635670522dbb01a2c78150443e1385746924566079f36570ea AS go-build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -32,12 +32,15 @@ ENV APPDATA_DIR=/appdata \
 WORKDIR /app
 COPY actions/requirements.lock /tmp/lake-pass-actions-requirements.txt
 # Keep the SDK and browser image paired; apply Noble's ABI-compatible security fixes.
-# Refuse an unexpected resolver change rather than upgrading unrelated packages.
-RUN apt-get update \
-    && LC_ALL=C apt-get --simulate --no-install-recommends --only-upgrade install libssl3t64 openssl libbrotli1 > /tmp/lake-pass-security-plan \
+# Disable download retries while bootstrapping the fix for CVE-2026-109518.
+# Keep the upgrade limited to the security packages already installed.
+RUN apt-get -o Acquire::Retries=0 update \
+    && LC_ALL=C apt-get --simulate --no-install-recommends --only-upgrade install apt libapt-pkg6.0t64 libssl3t64 openssl libbrotli1 > /tmp/lake-pass-security-plan \
     && cat /tmp/lake-pass-security-plan \
-    && awk '/^(Remv|Purg) / { exit 1 } /^Inst / { if ($2 != "libssl3t64" && $2 != "openssl" && $2 != "libbrotli1") exit 1 }' /tmp/lake-pass-security-plan \
-    && apt-get --yes --no-install-recommends --only-upgrade install libssl3t64 openssl libbrotli1 \
+    && awk '/^(Remv|Purg) / { exit 1 } /^Inst / && $2 !~ /^(apt|libapt-pkg6\.0t64|libssl3t64|openssl|libbrotli1)$/ { exit 1 }' /tmp/lake-pass-security-plan \
+    && apt-get -o Acquire::Retries=0 --yes --no-install-recommends --only-upgrade install apt libapt-pkg6.0t64 libssl3t64 openssl libbrotli1 \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' apt)" ge 2.8.4ubuntu0.1 \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libapt-pkg6.0t64)" ge 2.8.4ubuntu0.1 \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libssl3t64)" ge 3.0.13-0ubuntu3.16 \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' openssl)" ge 3.0.13-0ubuntu3.16 \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libbrotli1)" ge 1.1.0-2ubuntu0.1 \

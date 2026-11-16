@@ -180,6 +180,14 @@ assert context.check_hostname and context.verify_mode == ssl.CERT_REQUIRED
 assert context.cert_store_stats()["x509_ca"] > 0
 ' || fail "patched OpenSSL lost Python certificate-verification defaults"
 
+docker run --rm --network none --read-only --entrypoint sh "$image" -eu -c '
+  for package in apt libapt-pkg6.0t64; do
+    version="$(dpkg-query -W -f="\${Version}" "$package")"
+    dpkg --compare-versions "$version" ge 2.8.4ubuntu0.1
+    printf "%s %s\n" "$package" "$version"
+  done
+' || fail "runtime APT packages lack the required Noble security fixes"
+
 # The OS library and Playwright's statically linked Node decoder are distinct.
 # Check both actual decoders, not their upstream version strings alone.
 docker run --rm --network none --read-only --entrypoint sh "$image" -eu -c '
